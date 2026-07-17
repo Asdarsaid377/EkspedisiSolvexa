@@ -1,0 +1,358 @@
+========================================================================
+PENJELASAN APLIKASI BUNGANAIK — SISTEM MANAJEMEN STOK & PENJUALAN
+========================================================================
+Dokumen ini menjelaskan secara rinci alur kerja, fitur, dan modul yang
+ada di aplikasi BungaNaik, termasuk perbedaan alur penjualan barang
+READY STOCK dan barang PO (Purchase Order / pesanan custom).
+
+
+1. GAMBARAN UMUM
+========================================================================
+BungaNaik adalah sistem manajemen stok dan penjualan berbasis web untuk
+toko furniture, dibangun dengan Next.js 14 (App Router) + Supabase
+(PostgreSQL, Auth, Storage). Aplikasi ini melayani beberapa jenis
+pengguna:
+
+  - Tim internal (superadmin, kasir, keuangan, cs, gudang, pengiriman,
+    produksi, sopir) — bekerja lewat halaman /dashboard
+  - Reseller — belanja lewat katalog publik /katalog (harga khusus
+    reseller / harga_katalog)
+  - Pembeli umum — belanja lewat /toko (harga +25% dari harga_katalog)
+  - Customer yang menerima QR code produk — melihat detail produk di
+    /produk/[id] setelah memasukkan kode internal
+  - Customer yang ingin melacak pesanannya — mengecek nomor resi di
+    /resi/[nomor] tanpa perlu login
+
+
+2. PERAN & HAK AKSES (ROLE)
+========================================================================
+Setiap user punya satu role yang menentukan menu & aksi apa saja yang
+bisa diakses:
+
+  - superadmin  : akses penuh ke semua modul, termasuk harga modal,
+                  laba, bonus owner, kelola pengguna, hapus penjualan,
+                  kode internal produk, semua milestone tracking
+  - kasir       : input penjualan, kasir POS, pelunasan pembayaran;
+                  TIDAK bisa lihat harga modal & laba
+  - keuangan    : laporan keuangan, monitoring penjualan, pelunasan,
+                  reseller, Purchase Order (read + proses)
+  - cs          : produk & stok, reseller, pelanggan, Purchase Order
+  - gudang      : produk & stok, Purchase Order, update milestone
+                  penjualan ke "dikirim"
+  - pengiriman  : monitoring penjualan, Purchase Order, update
+                  milestone ke "dikirim"
+  - produksi    : Purchase Order, update milestone ke "diproduksi"
+                  (hanya jika penjualan terhubung ke PO), catat progress
+                  produksi
+  - sopir       : monitoring penjualan, update milestone ke "selesai"
+
+
+3. STRUKTUR MENU / MODUL APLIKASI
+========================================================================
+
+3.1 Dashboard (/dashboard)
+---------------------------------------------------------------------
+Ringkasan bisnis: filter bulan/tahun, kartu statistik penjualan, grafik
+batang, 5 penjualan terbaru, widget transaksi belum lunas.
+
+3.2 Meja Kerja Owner (/dashboard/owner/workspace) — superadmin only
+---------------------------------------------------------------------
+Pusat kontrol owner:
+  - Status reminder audit nota & stock opname hari ini
+  - Ringkasan tagihan belum lunas / DP
+  - Monitoring PO aktif
+  - Reseller baru 7 hari terakhir + ringkasan kinerja bulan ini
+  - Checklist bulanan manual + catatan kebijakan
+  - Pengaturan siklus reminder audit nota & stock opname
+Reminder di-generate otomatis berdasarkan siklus yang diatur di
+owner_settings (siklus_audit_nota_hari, siklus_stock_opname_hari), dan
+otomatis berubah status "terlewat" bila melewati due_date.
+
+3.3 Produk & Stok (/dashboard/produk)
+---------------------------------------------------------------------
+CRUD produk, multi-foto (upload ke Storage bucket "BungaNaik", diurutkan
+lewat kolom urutan di tabel produk_foto), generate & cetak QR code
+produk (massal), tombol Rekalkulasi Laba (untuk memperbarui laba semua
+transaksi bila harga modal berubah). Field harga modal hanya terlihat
+oleh superadmin.
+
+3.4 Reseller (/dashboard/reseller)
+---------------------------------------------------------------------
+CRUD data reseller, filter kota/bonus/tanggal, ringkasan bonus per
+reseller, nomor faktur transaksi terkait bisa diklik langsung ke detail.
+
+3.5 Pelanggan (/dashboard/pelanggan)
+---------------------------------------------------------------------
+Database customer end-user, diagregasi dari kolom nama_customer &
+telepon_customer pada tiap transaksi, dikelompokkan per reseller
+(accordion), dengan tombol chat WhatsApp langsung.
+
+3.6 Penjualan (/dashboard/penjualan) & Kasir POS (/dashboard/pos)
+---------------------------------------------------------------------
+Dua ANTARMUKA BERBEDA untuk membuat transaksi penjualan yang SAMA
+persis di baliknya (sama-sama menulis ke tabel penjualan +
+penjualan_item + penjualan_pembayaran, sama-sama mengurangi stok saat
+disimpan). Bedanya hanya gaya kerja:
+
+  - /dashboard/pos  : tampilan grid/cart ala kasir toko — klik produk,
+                      keranjang muncul di samping, cocok untuk
+                      transaksi cepat walk-in / reseller
+  - /dashboard/penjualan : form modal + tabel monitoring lengkap
+                      (pencarian, filter, status bayar, badge komplain,
+                      pelunasan, catatan internal, export Excel) —
+                      cocok untuk input data & pemantauan transaksi
+                      yang sudah ada
+
+Keduanya punya toggle "Barang dari PO?" — lihat bagian 4.2 di bawah
+untuk alur lengkapnya.
+
+3.7 Detail Penjualan (/dashboard/penjualan/[id])
+---------------------------------------------------------------------
+Halaman detail satu transaksi: info lengkap, riwayat pembayaran
+(termasuk foto bukti transfer), review/komplain dari reseller, catatan
+internal, tombol update milestone tracking sesuai role, tombol hapus
+(superadmin, otomatis mengembalikan stok), tombol cetak invoice, dan
+tombol "Bagikan ke Customer" (copy link /resi/{nomor_resi}).
+
+3.8 Purchase Order — PO (/dashboard/po & /dashboard/po/[id])
+---------------------------------------------------------------------
+Modul untuk mencatat & memproses PERMINTAAN barang (baik dari reseller
+maupun customer umum) yang butuh diproses/diproduksi terlebih dahulu.
+Lihat penjelasan alur lengkap di bagian 4.2.
+  - List (/dashboard/po): kartu ringkasan (pending/diproses/selesai/
+    terlambat), filter status & tanggal, badge prioritas
+    (rendah/normal/tinggi/urgent), quick-change prioritas & status.
+  - Detail (/dashboard/po/[id]): halaman penuh yang menampilkan foto
+    barang yang diminta (dari foto produk jika terhubung ke produk
+    master, atau placeholder jika item custom), foto referensi umum
+    PO (diupload saat membuat PO), detail nama peminta (reseller atau
+    customer + nomor telepon dengan link WhatsApp), tanggal PO &
+    estimasi selesai, riwayat & form progress produksi, serta aksi
+    Mulai Proses / Tandai Selesai (dengan opsi tambah stok otomatis) /
+    Batalkan / Hapus / Cetak PO.
+
+3.9 Target Penjualan (/dashboard/target)
+---------------------------------------------------------------------
+Pengaturan & pemantauan target penjualan.
+
+3.10 Pencocokan Nota (/dashboard/pencocokan)
+---------------------------------------------------------------------
+AUDIT setelah transaksi selesai (bukan approval sebelum proses) —
+owner mencocokkan nota fisik dengan data sistem. Status: belum_
+dicocokkan → cocok / selisih. Tidak ada logic apapun di gudang/
+pengiriman/sopir yang menunggu hasil pencocokan ini.
+
+3.11 Laporan (/dashboard/laporan/...)
+---------------------------------------------------------------------
+  - Laporan Penjualan       : trend, top 5 produk & reseller, tabel detail
+  - Top Reseller            : ranking omset/unit, podium, tabel top 20
+  - Laporan Produk          : performa penjualan per produk
+  - Laporan Sopir           : podium top 3 sopir berdasarkan jumlah
+                              pengiriman selesai
+  - Kritik & Saran (review) : satisfaction rate, donut chart, daftar
+                              komplain/pujian per reseller
+
+3.12 Stock Aging (/dashboard/stock-aging)
+---------------------------------------------------------------------
+Menghitung usia stok sejak mutasi terakhir, kategori Segar/Normal/
+Perhatian/Kritis, plus nilai modal barang (khusus superadmin).
+
+3.13 Keuangan (/dashboard/keuangan/...)
+---------------------------------------------------------------------
+  - Laporan Keuangan  : ringkasan pemasukan/pengeluaran
+  - Pengeluaran       : pencatatan biaya operasional
+
+3.14 Modul HPP — Harga Pokok Produksi (/dashboard/hpp/...)
+---------------------------------------------------------------------
+Modul untuk menghitung biaya produksi barang yang dibuat sendiri
+(bukan dibeli jadi):
+  - Bahan Baku      : master bahan baku + riwayat mutasi stok bahan
+  - Pembelian BB     : pencatatan pembelian bahan baku (otomatis
+                       menambah stok bahan & update harga beli terakhir)
+  - Bill of Materials (BOM) : resep/kebutuhan bahan baku standar per
+                       produk, dipakai untuk estimasi biaya per unit
+  - Batch Produksi   : membuka batch produksi (auto-generate kebutuhan
+                       bahan dari BOM × target unit), lalu menyelesaikan
+                       batch (baru saat itu stok bahan baku dikurangi,
+                       dan HPP aktual per unit dihitung)
+  - Laporan HPP      : perbandingan HPP standar vs aktual, variance
+                       per bahan baku, per periode
+
+3.15 Pengguna (/dashboard/pengguna) — superadmin only
+---------------------------------------------------------------------
+Kelola akun staff & role masing-masing.
+
+3.16 Halaman Publik (tanpa login)
+---------------------------------------------------------------------
+  - /katalog        : katalog untuk reseller, harga = harga_katalog,
+                       cart localStorage "bunganik_cart"
+  - /toko           : katalog untuk pembeli umum, harga = harga_katalog
+                       × 1.25 dibulatkan ke atas (harga asli TIDAK
+                       pernah ditampilkan), cart terpisah "bng_toko_cart"
+  - /toko/[id]      : detail produk pembeli umum, gallery foto, qty
+                       picker, tombol WA
+  - /produk/[id]    : detail produk untuk yang scan QR code — harus
+                       masukkan kode internal dulu (diverifikasi
+                       server-side, tidak bocor ke client), lalu
+                       tampil harga rekomendasi jual +25%
+  - /resi/[nomor]   : tracking publik — customer memasukkan/membuka
+                       link nomor resi untuk melihat status pesanan
+                       (diproses → diproduksi → dikirim → selesai),
+                       progress bar produksi, riwayat foto per update
+
+
+4. ALUR BISNIS UTAMA
+========================================================================
+
+4.1 ALUR PENJUALAN BARANG READY STOCK
+---------------------------------------------------------------------
+Ini dipakai saat barang yang diminta customer/reseller SUDAH tersedia
+di stok gudang, tidak perlu produksi.
+
+  Langkah 1 — Buat transaksi
+    Staff (kasir/superadmin/dll sesuai role) membuka /dashboard/pos
+    (gaya kasir cepat) atau /dashboard/penjualan lalu klik "Buat
+    Penjualan Baru" (gaya form). Pilih/cari produk yang mau dibeli,
+    masukkan jumlah — sistem otomatis menolak jika stok produk <= 0.
+
+  Langkah 2 — Isi data pembeli & pembayaran
+    Pilih reseller (dari master reseller) ATAU isi data customer umum
+    (nama & telepon opsional). Tentukan metode bayar (transfer/cod/
+    cash) dan status (lunas/DP/belum bayar). Jika DP, masukkan jumlah
+    uang muka.
+
+  Langkah 3 — Simpan
+    Sistem otomatis:
+      - Generate nomor_faktur (format INV-YYYYMMDD-0001)
+      - Generate nomor_resi (format BNG-XXXXXXXX, untuk tracking publik)
+      - Milestone transaksi diset ke "diproses" (karena TIDAK
+        terhubung ke PO)
+      - Stok produk langsung DIKURANGI sejumlah barang yang terjual,
+        dan dicatat di mutasi_stok (tipe "keluar")
+      - Insert baris penjualan_pembayaran sebesar uang yang sudah
+        diterima (DP atau lunas)
+
+  Langkah 4 — Proses pengiriman
+    Karena tidak ada PO, milestone LANGSUNG lompat dari "diproses" ke
+    "dikirim" (skip "diproduksi" — milestone ini hanya untuk barang
+    yang butuh produksi). Role gudang/pengiriman meng-update milestone
+    ke "dikirim" beserta keterangan & foto (opsional).
+
+  Langkah 5 — Selesai & pelunasan
+    Role sopir menandai milestone "selesai" saat barang sampai ke
+    tujuan. Jika masih ada sisa tagihan, kasir/keuangan/superadmin bisa
+    mencatat pelunasan lewat tombol "Catat Pembayaran" di tabel
+    penjualan atau di halaman detail — setiap termin pembayaran masuk
+    ke tabel penjualan_pembayaran, uang_dp bertambah, status_bayar
+    dihitung ulang otomatis.
+
+  Langkah 6 — Customer bisa tracking
+    Staff bisa membagikan link /resi/{nomor_resi} ke customer supaya
+    bisa memantau status pesanannya sendiri tanpa perlu login.
+
+  Catatan: staff juga bisa mencatat komplain/pujian dari reseller lewat
+  detail transaksi (tabel reseller_reviews), dan owner meng-audit
+  kecocokan nota lewat modul Pencocokan (setelah transaksi berjalan,
+  bukan sebelum).
+
+
+4.2 ALUR PENJUALAN BARANG PO (PESANAN CUSTOM / BUTUH PRODUKSI)
+---------------------------------------------------------------------
+Ini dipakai saat barang yang diminta BELUM ada stoknya dan harus
+dibuat/diproduksi dulu, atau butuh proses pengadaan terlebih dahulu.
+PENTING: modul Purchase Order (PO) dan modul Penjualan adalah DUA
+CATATAN TERPISAH yang saling terhubung lewat kolom po_id — PO tidak
+otomatis "berubah menjadi" transaksi penjualan, staff harus membuat
+transaksi penjualan secara manual dan menghubungkannya ke PO yang
+sudah ada.
+
+  Langkah 1 — Permintaan masuk, buat PO
+    Saat ada permintaan barang custom/belum tersedia (dari reseller
+    atau customer umum), staff (cs/gudang/produksi/pengiriman/
+    keuangan/superadmin) membuka /dashboard/po → "Buat PO Baru".
+    Isi:
+      - Tipe pemohon: reseller atau customer umum
+      - Daftar item yang diminta (bisa pilih dari master produk, atau
+        ketik bebas untuk barang custom yang belum ada di master)
+      - Jumlah & satuan per item, keterangan/spesifikasi
+      - Prioritas pengerjaan (rendah/normal/tinggi/urgent)
+      - Tanggal PO & estimasi tanggal selesai
+      - Foto referensi barang yang diminta (opsional, upload gambar)
+    PO tersimpan dengan status "pending" dan nomor_po otomatis
+    (format PO-YYYYMMDD-0001).
+
+  Langkah 2 — Mulai diproses
+    Tim terkait menekan "Mulai Proses" pada PO tersebut → status
+    berubah menjadi "proses".
+
+  Langkah 3 — Produksi & progress tracking
+    Selama proses produksi, role produksi/superadmin mencatat progress
+    lewat modal/section Progress pada halaman list atau halaman detail
+    PO (/dashboard/po/[id]): tanggal, persentase pengerjaan (0-100%),
+    keterangan, dan foto progress. Riwayat ini bisa dilihat kapan saja
+    untuk memantau sejauh mana pengerjaan barang.
+
+  Langkah 4 — PO selesai diproduksi
+    Setelah barang selesai dibuat, staff menekan "Tandai Selesai" pada
+    PO. Muncul konfirmasi dengan opsi "Tambahkan item ke stok" — jika
+    diaktifkan (default aktif), untuk setiap item PO yang terhubung ke
+    produk master, stok produk tersebut akan otomatis BERTAMBAH sesuai
+    jumlah di PO, dan dicatat di mutasi_stok (tipe "masuk"). Item
+    custom yang tidak terhubung ke produk master akan dilewati (stok
+    tidak berubah) karena memang tidak punya representasi di master
+    produk. Status PO berubah menjadi "selesai".
+
+  Langkah 5 — Buat transaksi penjualan dari PO
+    Setelah barang PO siap (baik statusnya masih "proses" atau sudah
+    "selesai" — sistem tidak memaksa PO harus selesai dulu), staff
+    membuka /dashboard/pos atau /dashboard/penjualan, mengaktifkan
+    toggle "Barang dari PO?", lalu memilih PO yang bersangkutan dari
+    daftar (semua PO yang statusnya bukan "batal"). Sistem otomatis
+    mengisi keranjang/form dengan item-item dari PO tersebut beserta
+    jumlah & harga default. Staff melengkapi metode bayar & status
+    bayar seperti biasa lalu simpan.
+    Perbedaan penting dibanding penjualan ready stock:
+      - penjualan.po_id diisi dengan id PO terkait
+      - milestone AWAL transaksi otomatis menjadi "diproduksi" (bukan
+        "diproses"), karena barangnya sudah/sedang diproduksi lewat PO
+      - stok produk (untuk item yang terhubung ke produk master) tetap
+        dikurangi seperti biasa saat transaksi disimpan — ini terpisah
+        dari penambahan stok saat PO ditandai selesai di langkah 4
+
+  Langkah 6 — Lanjut ke pengiriman & selesai
+    Milestone lanjut dari "diproduksi" → "dikirim" (role gudang/
+    pengiriman) → "selesai" (role sopir), sama seperti alur ready
+    stock. Pelunasan pembayaran & customer tracking lewat /resi/[nomor]
+    juga berjalan sama persis seperti alur ready stock.
+
+  Ringkasan perbedaan milestone:
+      Ready stock : diproses → dikirim → selesai   (skip diproduksi)
+      Dari PO     : diproduksi → dikirim → selesai (skip diproses,
+                    karena begitu dibuat statusnya sudah dianggap
+                    "sedang/sudah diproduksi")
+
+
+5. CATATAN & PRINSIP PENTING
+========================================================================
+  - Grand Total transaksi = total_harga_jual SAJA (ongkir tidak
+    ditambahkan lagi di angka ini)
+  - Bonus reseller dianggap lunas jika bonus_terbayar >= total_bonus +
+    bonus_owner (bukan hanya dibandingkan ke total_bonus)
+  - metode_bayar pada tabel penjualan adalah metode pembayaran PERTAMA
+    dan tidak pernah ditimpa; tiap termin pelunasan berikutnya dicatat
+    terpisah di penjualan_pembayaran
+  - Hanya superadmin yang bisa menghapus transaksi penjualan — stok
+    yang sudah terpotong akan dikembalikan otomatis
+  - Pencocokan nota adalah audit SETELAH transaksi berjalan, bukan
+    approval yang memblokir proses operasional
+  - Stok bahan baku pada modul HPP hanya dikurangi saat batch produksi
+    ditandai SELESAI, bukan saat batch baru dibuka
+  - Semua foto (produk, bukti transfer, tracking, progress PO) memakai
+    Supabase Storage bucket bernama "BungaNaik" dengan folder path
+    berbeda-beda sesuai jenis fotonya
+
+
+SUPABASE S3 URL=https://ffahrqemfmkbdhchbirz.storage.supabase.co/storage/v1/s3
+SUPABASE S3 REGION=ap-northeast-2
+AKSESKEY=79c50ff27bc9788880aab38b6d1304ec
+SECRETKEY=7bb9e88830034e2355b1e80062d855b6d27bb7f66cea4aceaff25f7f0e37cbb4
