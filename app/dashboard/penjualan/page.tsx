@@ -1124,7 +1124,7 @@ export default function PenjualanPage() {
 											)}
 											{(isSuperAdmin ||
 												role === "kasir" ||
-												role === "pengiriman" ||
+												role === "kurir" ||
 												role === "gudang" ||
 												role === "keuangan") && (
 												<button

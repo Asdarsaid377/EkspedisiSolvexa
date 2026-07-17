@@ -100,7 +100,7 @@ Dibangun dengan **Next.js 14 (App Router) + Supabase (PostgreSQL + Auth + Storag
 ```sql
 id UUID (FK -> auth.users)
 name TEXT
-role TEXT CHECK ('superadmin' | 'kasir' | 'keuangan' | 'cs' | 'gudang' | 'pengiriman' | 'produksi' | 'sopir')
+role TEXT CHECK ('superadmin' | 'kasir' | 'keuangan' | 'cs' | 'gudang' | 'kurir' | 'sopir')
 created_at TIMESTAMPTZ
 ```
 
@@ -376,6 +376,214 @@ created_at TIMESTAMPTZ DEFAULT NOW()
 
 ---
 
+### Entitas Expedisi (Fase 1 pivot — 17 Jul 2026)
+
+> **PENTING**: `pengiriman` adalah tabel **BARU dan TERPISAH TOTAL** dari
+> `penjualan`/`penjualan_item`/`produk` — bukan rename. Tabel `penjualan`
+> lama TIDAK dihapus/diubah, tetap berisi 59 transaksi furniture historis
+> sebagai arsip. Halaman `/dashboard/penjualan` masih ada & masih berfungsi
+> (baca data lama), tapi transaksi BARU harus lewat `/dashboard/pengiriman`.
+> Dashboard utama, Meja Kerja Owner, semua Laporan, Pencocokan, Target, dan
+> Pelanggan **masih baca `penjualan`/`produk` lama** — belum direstrukturisasi,
+> datanya akan terlihat "beku" karena transaksi baru tidak masuk ke sana lagi.
+> Lihat `expedisi.md` §7 Fase 1 untuk detail lengkap.
+
+#### `pengiriman`
+
+```sql
+id                    UUID PRIMARY KEY DEFAULT gen_random_uuid()
+nomor_faktur          TEXT UNIQUE NOT NULL     -- trigger, prefix PGM-YYYYMMDD-XXXX
+nomor_resi            TEXT UNIQUE              -- BNG-XXXXXXXX, sama format dgn penjualan
+tanggal               TIMESTAMPTZ DEFAULT NOW()
+jenis_layanan         TEXT CHECK ('reguler'|'express'|'kargo') DEFAULT 'reguler'
+pengirim_nama         TEXT NOT NULL
+pengirim_telepon      TEXT
+pengirim_alamat       TEXT
+pengirim_kota         TEXT
+penerima_nama         TEXT NOT NULL
+penerima_telepon      TEXT
+penerima_alamat       TEXT
+penerima_kota         TEXT
+berat_kg              NUMERIC(10,2) NOT NULL DEFAULT 0
+panjang_cm            NUMERIC(10,2)
+lebar_cm              NUMERIC(10,2)
+tinggi_cm             NUMERIC(10,2)
+berat_volumetrik_kg   NUMERIC(10,2) GENERATED ALWAYS AS (panjang*lebar*tinggi/6000) STORED
+isi_barang            TEXT
+nilai_barang          NUMERIC(15,2) DEFAULT 0   -- dasar klaim/asuransi, dipakai mulai Fase 4
+ongkir                NUMERIC(15,2) DEFAULT 0   -- MANUAL di Fase 1 utk SEMUA jenis_layanan (pricing engine = Fase 2)
+biaya_asuransi        NUMERIC(15,2) DEFAULT 0
+total_tagihan         NUMERIC(15,2) DEFAULT 0
+status_bayar          TEXT CHECK ('lunas'|'dp'|'belum_bayar') DEFAULT 'belum_bayar'
+metode_bayar          TEXT CHECK ('transfer'|'cod'|'cash') DEFAULT 'transfer'
+uang_dp               NUMERIC(15,2) DEFAULT 0
+milestone             TEXT CHECK ('diproses'|'dijemput'|'dikirim'|'selesai') DEFAULT 'diproses'
+petugas_nama          TEXT    -- kurir (reguler/express) atau sopir (kargo)
+petugas_telepon       TEXT
+catatan               TEXT
+catatan_internal       TEXT
+created_by            UUID FK -> profiles
+created_at, updated_at TIMESTAMPTZ
+```
+
+**Role update milestone** (linear, tanpa percabangan — beda dari `penjualan`
+yang punya cabang kondisional `diproduksi` berdasarkan `po_id`):
+- `superadmin`: semua transisi
+- `gudang` / `kurir`: `diproses → dijemput`
+- `gudang` / `kurir` / `keuangan` / `sopir` / `kasir`: `dijemput → dikirim`
+- `sopir` / `kurir` / `keuangan` / `kasir`: `dikirim → selesai`
+
+`pengiriman_tracking` dan `pengiriman_pembayaran` — struktur identik dengan
+`tracking_progress`/`penjualan_pembayaran` lama, hanya kolom FK-nya
+`pengiriman_id` (bukan `penjualan_id`). `pengiriman_tracking` **tidak**
+punya kolom `persentase` (hanya dipakai dulu untuk milestone `diproduksi`
+yang sekarang tidak ada).
+
+`insertPengirimanWithResi()` di `lib/utils.ts` — pola sama persis dengan
+`insertPenjualanWithResi()` (retry-on-collision 5x), keduanya reuse
+`generateNomorResi()` yang sama (table-agnostic).
+
+#### `tarif_zona` (Fase 2 — pricing engine, 17 Jul 2026)
+
+```sql
+id             UUID PRIMARY KEY DEFAULT gen_random_uuid()
+kota_asal      TEXT NOT NULL
+kota_tujuan    TEXT NOT NULL
+jenis_layanan  TEXT CHECK ('reguler'|'express')   -- kargo TIDAK pakai tabel ini, tetap manual quote
+harga_per_kg   NUMERIC(15,2) DEFAULT 0
+harga_flat_min NUMERIC(15,2) DEFAULT 0   -- floor/minimum ongkir
+estimasi_hari  INTEGER
+aktif          BOOLEAN DEFAULT true
+created_by     UUID FK -> profiles
+created_at, updated_at TIMESTAMPTZ
+UNIQUE (LOWER(kota_asal), LOWER(kota_tujuan), jenis_layanan)  -- case-insensitive
+```
+
+**Kalkulasi ongkir otomatis** (dipakai di form `/dashboard/pengiriman`, hanya
+untuk `jenis_layanan` reguler/express):
+
+```
+berat_efektif = MAX(berat_kg, berat_volumetrik_kg)
+ongkir        = MAX(harga_per_kg × berat_efektif, harga_flat_min)
+```
+
+Lookup pakai `.ilike()` (case-insensitive exact match, bukan wildcard) pada
+`kota_asal`/`kota_tujuan` — cocok dengan behavior unique constraint di DB.
+Kalau tidak ada tarif untuk pasangan kota tsb, form **tidak diblokir**,
+staff isi `ongkir` manual (ada notice di UI). RLS: `auth_all_tarif_zona`
+(staff-only) — **tidak ada akses anon**, beda dari view tracking publik,
+karena harga per-kg adalah info internal.
+
+CRUD tarif di `/dashboard/tarif-zona` (superadmin only).
+
+#### `armada` / `manifest` / `manifest_item` (Fase 3 — manifest & armada, 17 Jul 2026)
+
+```sql
+-- armada
+id              UUID PRIMARY KEY DEFAULT gen_random_uuid()
+plat_nomor      TEXT UNIQUE NOT NULL
+jenis_kendaraan TEXT
+kapasitas_kg    NUMERIC(10,2)
+kapasitas_m3    NUMERIC(10,2)
+status          TEXT CHECK ('tersedia'|'maintenance'|'nonaktif') DEFAULT 'tersedia'
+sopir_id        UUID FK -> profiles   -- sopir/kurir DEFAULT, opsional, bisa dioverride per manifest
+catatan, aktif, created_at, updated_at
+
+-- manifest
+id                UUID PRIMARY KEY DEFAULT gen_random_uuid()
+nomor_manifest    TEXT UNIQUE NOT NULL   -- trigger, prefix MNF-YYYYMMDD-XXXX
+armada_id         UUID FK -> armada
+sopir_id          UUID FK -> profiles   -- petugas TRIP ini, boleh beda dari armada.sopir_id
+rute              TEXT
+tanggal_berangkat DATE
+status            TEXT CHECK ('draft'|'berangkat'|'selesai'|'batal') DEFAULT 'draft'
+catatan, created_by, created_at, updated_at
+
+-- manifest_item (junction, banyak pengiriman per manifest)
+id             UUID PRIMARY KEY DEFAULT gen_random_uuid()
+manifest_id    UUID FK -> manifest (ON DELETE CASCADE)
+pengiriman_id  UUID FK -> pengiriman (ON DELETE CASCADE)
+urutan         INTEGER DEFAULT 0
+UNIQUE (manifest_id, pengiriman_id)
+```
+
+RLS: `auth_all_armada`/`auth_all_manifest`/`auth_all_manifest_item` (staff-only,
+tidak ada view publik — tidak relevan untuk customer).
+
+**Bulk milestone update dari manifest** (`/dashboard/manifest/[id]`):
+- Tombol **Berangkat** (status manifest `draft → berangkat`): update SEMUA
+  `pengiriman` dalam manifest yang masih `diproses`/`dijemput` jadi `dikirim`,
+  insert 1 baris `pengiriman_tracking` per item (`catatan: "Update massal
+  via manifest {nomor_manifest}"`)
+- Tombol **Tandai Selesai** (`berangkat → selesai`): sama, target milestone
+  `selesai`
+- Tombol **Batalkan** (`→ batal`): **hanya** ubah `manifest.status` — milestone
+  `pengiriman` yang sudah terlanjur ter-update TIDAK otomatis dikembalikan
+  (staff perbaiki manual per-kiriman kalau perlu)
+- Role gate aksi bulk: `superadmin`, `gudang`, `sopir`, `kurir`. Role gate
+  tambah/hapus isi manifest (hanya saat status `draft`): `superadmin`, `gudang`
+
+**Cegah kiriman dobel-manifest**: saat cari kiriman untuk ditambahkan,
+kiriman yang sudah ada di manifest LAIN berstatus `draft`/`berangkat`
+dikecualikan dari hasil pencarian. Ini dicek di level aplikasi (2 query +
+filter client-side), **bukan** constraint DB — jadi kalau ada API/jalur lain
+yang insert `manifest_item` langsung, pengecekan ini terlewati.
+
+#### `klaim` / `cod_setoran` (Fase 4 — COD & Klaim, 18 Jul 2026)
+
+```sql
+klaim
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  nomor_klaim               TEXT UNIQUE NOT NULL     -- trigger, prefix KLM-YYYYMMDD-0001
+  pengiriman_id             UUID REFERENCES pengiriman(id) ON DELETE SET NULL
+  pengiriman_nomor_resi     TEXT   -- snapshot saat dibuat, tetap tampil walau pengiriman induk dihapus
+  pengiriman_penerima_nama  TEXT   -- snapshot
+  tipe                      TEXT CHECK ('hilang'|'rusak')
+  status                    TEXT CHECK ('pending'|'disetujui'|'ditolak'|'selesai') DEFAULT 'pending'
+  nilai_klaim               NUMERIC(15,2) DEFAULT 0   -- nilai yang diajukan
+  nilai_disetujui           NUMERIC(15,2)             -- diisi superadmin saat approve
+  kronologi                 TEXT
+  catatan_approval          TEXT
+  foto_bukti                TEXT
+  created_by, approved_by   UUID FK -> profiles
+  approved_at               TIMESTAMPTZ
+  created_at, updated_at    TIMESTAMPTZ
+
+cod_setoran
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid()
+  sopir_id       UUID FK -> profiles (NOT NULL)   -- sopir ATAU kurir yang menyetor
+  jumlah         NUMERIC(15,2) NOT NULL
+  tanggal_setor  DATE DEFAULT CURRENT_DATE
+  catatan        TEXT
+  foto_bukti     TEXT
+  created_by     UUID FK -> profiles
+  created_at     TIMESTAMPTZ
+```
+
+> **`klaim.pengiriman_id` pakai `ON DELETE SET NULL`, BUKAN CASCADE** — beda
+> dari `pengiriman_tracking`/`pengiriman_pembayaran` yang cascade. Klaim
+> adalah catatan finansial yang tidak boleh hilang diam-diam kalau ada yang
+> menghapus pengiriman terkait (akses delete pengiriman cukup luas:
+> superadmin/kasir/kurir/gudang/keuangan). Karena itu `pengiriman_nomor_resi`
+> dan `pengiriman_penerima_nama` di-snapshot ke baris `klaim` saat dibuat.
+>
+> **`cod_setoran` sengaja tanpa nomor dokumen formal** (beda dari
+> `klaim`/`manifest`/`pengiriman` yang punya nomor trigger) — cukup ledger
+> sederhana per sopir/kurir, karena COD bukan metode pembayaran mayoritas
+> di bisnis ini (transfer/cash lebih dominan). "Estimasi COD Terkumpul" yang
+> ditampilkan di `/dashboard/cod` dihitung dengan mencocokkan
+> `pengiriman.petugas_nama` (TEXT bebas, bukan FK) terhadap `profiles.name`
+> milik sopir/kurir — **ini estimasi, bukan angka otoritatif**, karena
+> `pengiriman` tidak punya kolom `petugas_id` yang presisi. `cod_setoran`
+> sendiri (sisi setoran) tetap presisi karena `sopir_id` benar-benar FK ke
+> `profiles`.
+
+RLS `klaim`/`cod_setoran`: `auth_all_klaim`/`auth_all_cod_setoran` (staff-only,
+`auth.uid() IS NOT NULL`) — role gating dilakukan di level halaman React,
+bukan RLS granular per role (konsisten dengan `armada`/`manifest`).
+
+---
+
 ### Views Publik
 
 #### `tracking_publik`
@@ -423,6 +631,35 @@ GRANT SELECT ON tracking_riwayat_publik TO anon;
 ```
 
 > **PENTING — Views publik TIDAK BOLEH mengekspos**: `harga_modal`, `total_laba`, `total_bonus`, `bonus_owner`, `nama_customer`, `telepon_customer`, `harga_katalog`. Selalu `DROP VIEW IF EXISTS` sebelum recreate jika struktur kolom berubah.
+
+#### `pengiriman_publik` & `pengiriman_riwayat_publik`
+
+Versi baru untuk entitas `pengiriman` (lihat migration
+`supabase/migrations/20260717120000_pengiriman_fase1.sql`), dipakai oleh
+`/resi/[nomor]` (halaman yang sama, sudah di-rewrite untuk baca dari sini,
+**bukan** dari `tracking_publik` lama — resi transaksi furniture lama jadi
+"tidak ditemukan" di halaman ini, disengaja).
+
+```sql
+CREATE VIEW pengiriman_publik AS
+SELECT p.nomor_resi, p.milestone, p.jenis_layanan, p.tanggal AS tanggal_pesan,
+       p.penerima_nama, p.penerima_kota, p.isi_barang, p.berat_kg,
+       p.total_tagihan AS grand_total
+FROM pengiriman p WHERE p.nomor_resi IS NOT NULL;
+
+CREATE VIEW pengiriman_riwayat_publik AS
+SELECT p.nomor_resi, pt.milestone, pt.catatan, pt.foto_url, pt.created_at
+FROM pengiriman_tracking pt
+JOIN pengiriman p ON p.id = pt.pengiriman_id
+WHERE p.nomor_resi IS NOT NULL;
+```
+
+**Tidak mengekspos** (sama disiplinnya dengan view lama, plus tambahan
+khusus logistik): `pengirim_*` (identitas pengirim), `penerima_telepon`,
+`penerima_alamat` (hanya kota), `nilai_barang` (declared value — risiko
+target pencurian kalau link resi disebar), breakdown `ongkir`/`biaya_asuransi`
+(cuma `grand_total` gabungan), `petugas_nama`/`petugas_telepon`,
+`catatan_internal`, `nomor_faktur`.
 
 ---
 
@@ -791,14 +1028,14 @@ Harga Umum (/toko)      = Math.ceil(harga_katalog × 1.25)  ← sama, TIDAK tamp
 - Foto tracking disimpan di Storage path: `tracking/{penjualan_id}/{timestamp}.{ext}`
 - Flow milestone: `diproses → diproduksi (opsional, hanya jika ada PO) → dikirim → selesai`
 - Role yang boleh update milestone:
-  - `produksi`: → diproduksi (hanya jika `po_id` ada)
-  - `gudang` / `pengiriman`: → dikirim
-  - `sopir`: → selesai
+  - `gudang`: → diproduksi (hanya jika `po_id` ada) — diambil alih dari role `produksi` yang sudah dihapus (tidak relevan untuk expedisi)
+  - `gudang` / `kurir` / `keuangan` / `sopir` / `kasir`: → dikirim
+  - `sopir` / `kurir` / `keuangan` / `kasir`: → selesai
   - `superadmin`: semua milestone
 
 ### Delete Penjualan
 
-- Akses: `superadmin`, `kasir`, `pengiriman`, `gudang`, `keuangan`
+- Akses: `superadmin`, `kasir`, `kurir`, `gudang`, `keuangan`
 - Alur: fetch semua `penjualan_item` → untuk tiap item: `UPDATE produk SET stok += jumlah` + `INSERT mutasi_stok (tipe:'masuk', keterangan: 'Pembatalan penjualan ${nomor_faktur}')` → `DELETE penjualan`
 - Setelah delete → `router.push('/dashboard/penjualan')`
 
@@ -864,6 +1101,28 @@ type POPrioritas = "rendah" | "normal" | "tinggi" | "urgent";
 - Halaman `/dashboard/pelanggan`: aggregasi client-side, group by reseller
 - Key unik: `${telepon || nama}__${reseller_id}` untuk identify customer unik per reseller
 
+### COD & Klaim (Fase 4, 18 Jul 2026)
+
+- **Setoran COD** (`/dashboard/cod`): ledger setoran COD per sopir/kurir
+  (`cod_setoran`). "Estimasi COD Terkumpul" per petugas dihitung dari
+  `pengiriman_pembayaran` bermetode `cod` yang `pengiriman.petugas_nama`
+  cocok (case-insensitive) dengan `profiles.name` milik petugas tsb —
+  **ini estimasi**, karena `pengiriman.petugas_nama` adalah TEXT bebas,
+  bukan FK. "Sisa Saldo (estimasi)" = Estimasi Terkumpul − Total Setoran.
+- Role input setoran: `superadmin` | `keuangan` | `kurir` | `sopir`. Role
+  edit/hapus (koreksi): `superadmin` | `keuangan`.
+- **Klaim** (`/dashboard/klaim`): laporan barang hilang/rusak, tersimpan
+  di `klaim`, terhubung ke `pengiriman_id` (opsional — bisa `NULL` kalau
+  pengiriman induk sudah dihapus, lihat snapshot di §Database Schema).
+- Alur status: `pending` (siapa saja staf lapor) → `disetujui` | `ditolak`
+  (**superadmin only**, isi `nilai_disetujui` + `catatan_approval`) →
+  `selesai` (`superadmin` | `keuangan`, menandakan ganti rugi sudah
+  dibayar/kasus ditutup — tidak otomatis terhubung ke `pengeluaran`, staff
+  catat manual kalau ada pembayaran keluar).
+- Role hapus klaim: `superadmin` only.
+- Field `pengiriman.nilai_barang` (disiapkan sejak Fase 1) jadi acuan wajar
+  saat mengisi `nilai_klaim`, tapi tidak divalidasi otomatis (staff isi manual).
+
 ### waLink() & Resi Utility
 
 ```typescript
@@ -878,7 +1137,7 @@ export async function insertPenjualanWithResi(             // insert + retry col
 ### Stok Produk
 
 - Berkurang otomatis saat penjualan disimpan
-- Dikembalikan otomatis saat penjualan **dihapus** (superadmin, kasir, pengiriman, gudang, keuangan) + catat `mutasi_stok`
+- Dikembalikan otomatis saat penjualan **dihapus** (superadmin, kasir, kurir, gudang, keuangan) + catat `mutasi_stok`
 - Setiap perubahan tercatat di `mutasi_stok`
 
 ### Metode Pembayaran (Split)
@@ -923,10 +1182,11 @@ Selesaikan → UPDATE bahan_baku.stok -= jumlah_aktual (per item pemakaian)
 - `kasir`: Input penjualan, pelunasan, delete penjualan, tidak lihat harga modal & laba
 - `keuangan`: Akses laporan keuangan + penjualan + pelunasan + delete penjualan
 - `cs`: Katalog, reseller, pelanggan, PO
-- `gudang`: Produk & stok, PO, update milestone → dikirim, delete penjualan
-- `pengiriman`: Penjualan (monitoring), PO, update milestone → dikirim, delete penjualan
-- `produksi`: PO, update milestone → diproduksi (jika ada po_id)
+- `gudang`: Produk & stok, PO, update milestone → diproduksi (jika ada po_id) & dikirim, delete penjualan — mengambil alih tugas milestone `diproduksi` dari role `produksi` yang sudah dihapus
+- `kurir`: Penjualan (monitoring), PO, update milestone → dikirim/selesai, delete penjualan — gabungan/rename dari role `pengiriman` lama
 - `sopir`: Penjualan (monitoring), update milestone → selesai
+
+> Role `produksi` sudah **dihapus total** (17 Juli 2026, saat pivot ke expedisi) — tidak relevan untuk bisnis logistik. Kalau ada kode/dokumentasi lain yang masih menyebut `produksi` sebagai role, itu peninggalan lama dan perlu diperbaiki.
 
 ### Context
 
@@ -1047,7 +1307,11 @@ CRUD, filter kota + bonus + tanggal, summary bonus per kartu, `nomor_faktur` cli
 
 Aggregasi client-side dari `nama_customer`+`telepon_customer` di penjualan, dikelompokkan per reseller (accordion), WA link.
 
-### Penjualan (`/dashboard/penjualan`)
+### Penjualan (`/dashboard/penjualan`) — ARSIP FURNITURE, tidak dipakai untuk transaksi baru
+
+> Sejak Fase 1 pivot expedisi, transaksi baru masuk lewat **Pengiriman**
+> (`/dashboard/pengiriman`) di bawah, bukan di sini. Halaman ini dibiarkan
+> tetap berfungsi sebagai arsip 59 transaksi furniture historis.
 
 - Input penjualan dengan `nomor_resi` auto-generate
 - Filter tanggal, search, toggle status, kartu ringkasan belum lunas
@@ -1055,22 +1319,110 @@ Aggregasi client-side dari `nama_customer`+`telepon_customer` di penjualan, dike
 - Tombol pelunasan inline di tabel: `superadmin` | `kasir` | `keuangan` saat `status_bayar !== 'lunas'`
 - Modal pelunasan: input jumlah (prefill sisa), pilih metode, catatan, upload foto bukti
 
-### Detail Penjualan (`/dashboard/penjualan/[id]`)
+### Detail Penjualan (`/dashboard/penjualan/[id]`) — ARSIP FURNITURE
 
 - Full-page: info transaksi, riwayat pembayaran (termasuk foto bukti), review/komplain, catatan internal
 - **Milestone tracking**: tombol update milestone sesuai role, input keterangan + foto + persentase (untuk diproduksi)
 - **Tombol Delete** (superadmin only): konfirmasi modal, restore stok semua item, catat mutasi_stok
 - **Tombol Catat Pembayaran**: `superadmin` | `kasir` | `keuangan`, upload foto bukti transfer (opsional)
-- Tombol "Bagikan ke Customer" → copy link `/resi/{nomor_resi}`
+- Tombol "Bagikan ke Customer" → copy link `/resi/{nomor_resi}` — **catatan**: link ini sekarang akan "tidak ditemukan" karena `/resi/[nomor]` sudah dialihkan baca `pengiriman_publik`, bukan `tracking_publik` lagi
 - Print invoice
+
+### Pengiriman (`/dashboard/pengiriman`) — Fase 1, entitas aktif expedisi
+
+- Input pengiriman baru: pengirim, penerima, jenis layanan (reguler/express/kargo),
+  berat + dimensi (berat volumetrik dihitung otomatis oleh DB), isi barang,
+  nilai barang, ongkir, biaya asuransi, metode/status bayar, kurir/sopir, catatan
+- **Ongkir otomatis (Fase 2)**: begitu kota asal+tujuan+berat+jenis layanan
+  (reguler/express) terisi, form lookup `tarif_zona` dan auto-fill `ongkir`
+  — tetap bisa di-override manual, dan kalau rute belum ada tarifnya form
+  tidak diblokir (notice "isi manual"). Kargo selalu manual, tidak pernah lookup.
+- `nomor_resi` auto-generate via `insertPengirimanWithResi()`, format sama
+  dengan `penjualan` (`BNG-XXXXXXXX`)
+- Kartu ringkasan per milestone (Diproses/Dijemput/Dikirim/Selesai, klik utk
+  filter), kartu ringkasan belum lunas, filter tanggal + search + Export Excel
+- Modal sukses resi setelah simpan → copy link tracking / kirim WA ke penerima
+- Tombol pelunasan inline: `superadmin` | `kasir` | `keuangan`
+- Tidak ada logic stok/mutasi_stok sama sekali (tidak ada konsep produk)
+
+### Detail Pengiriman (`/dashboard/pengiriman/[id]`)
+
+- Full-page: info pengirim/penerima/barang, riwayat pembayaran, catatan internal
+- **Milestone tracking linear 4-tahap** (`diproses → dijemput → dikirim → selesai`,
+  tanpa percabangan kondisional seperti `penjualan` yang punya cabang `diproduksi`
+  berbasis `po_id`) — role gate lihat §"Entitas Expedisi" di atas
+- **Tombol Delete**: `superadmin` | `kasir` | `kurir` | `gudang` | `keuangan` —
+  jauh lebih simpel dari delete `penjualan` karena tidak ada stok yang perlu
+  dikembalikan, tinggal `DELETE` (cascade ke tracking & pembayaran)
+- **Tombol Catat Pembayaran** + **Tandai Lunas** + **Rollback Pembayaran**:
+  pola identik dengan `penjualan`, tabel target `pengiriman_pembayaran`
+- Print invoice (`printPengirimanInvoice`) & cetak resi + QR (`printPengirimanResi`)
+  — file terpisah dari `printInvoice.ts`/`printResi.ts` lama, bukan modifikasi
+
+### Tarif Zona (`/dashboard/tarif-zona`) — Fase 2, superadmin only
+
+- CRUD tarif per pasangan kota asal-tujuan + jenis layanan (reguler/express saja)
+- Field: harga per kg, minimum ongkir (floor), estimasi hari, toggle aktif/nonaktif
+- Tabel dengan search kota, badge jenis layanan berwarna
+- Dipakai otomatis oleh form `/dashboard/pengiriman` — lihat kalkulasi di
+  §"Entitas Expedisi" bagian `tarif_zona`
+
+### Armada (`/dashboard/armada`) — Fase 3, superadmin + gudang
+
+- CRUD kendaraan: plat nomor (unique), jenis kendaraan, kapasitas kg/m³,
+  status (Tersedia/Maintenance/Nonaktif), sopir/kurir default (opsional)
+- Grid card per kendaraan, search plat/jenis
+
+### Manifest (`/dashboard/manifest`, `/dashboard/manifest/[id]`) — Fase 3
+
+- List: filter status (Draft/Berangkat/Selesai/Batal), search nomor/rute/plat/sopir,
+  jumlah kiriman per manifest
+- Buat manifest baru → pilih armada (auto-prefill sopir default armada tsb,
+  bisa diganti), sopir/kurir untuk trip ini, rute, tanggal berangkat → redirect ke detail
+- Detail: edit info (armada/sopir/rute/tanggal, hanya saat status Draft),
+  tambah kiriman (search nomor faktur/resi/nama penerima — hanya kiriman
+  bermilestone `diproses`/`dijemput` & belum ada di manifest aktif lain),
+  hapus kiriman dari manifest (hanya saat Draft)
+- **Tombol Berangkat**: validasi minimal 1 kiriman + armada & sopir terisi,
+  lalu bulk-update milestone semua kiriman terkait ke `dikirim`
+- **Tombol Tandai Selesai**: bulk-update ke `selesai`
+- **Tombol Batalkan**: manifest jadi status Batal (milestone kiriman TIDAK
+  otomatis dikembalikan)
+- Role lengkap lihat §"Entitas Expedisi" bagian `armada`/`manifest`
+
+### Setoran COD (`/dashboard/cod`) — Fase 4
+
+- Kartu ringkasan per sopir/kurir: Estimasi COD Terkumpul, Total Setoran,
+  Sisa Saldo (estimasi) — lihat disclaimer perhitungan di §Business Logic
+- Filter petugas + rentang tanggal, riwayat setoran dengan foto bukti
+- Modal "Catat Setoran": pilih sopir/kurir (prefill diri sendiri kalau
+  yang login role `sopir`/`kurir`), jumlah, tanggal, catatan, foto opsional
+- Role input: `superadmin` | `keuangan` | `kurir` | `sopir`. Role
+  edit/hapus: `superadmin` | `keuangan`
+
+### Klaim (`/dashboard/klaim`) — Fase 4
+
+- Filter status (Semua/Pending/Disetujui/Ditolak/Selesai) + tipe
+  (Hilang/Rusak), search nomor klaim/resi/penerima
+- Modal "Lapor Klaim": search + pilih pengiriman terkait (nomor
+  faktur/resi/nama penerima), pilih tipe, isi nilai klaim + kronologi,
+  foto bukti opsional — bisa dibuat oleh staf role manapun
+- Modal "Proses Klaim" (khusus superadmin): isi nilai disetujui + catatan,
+  tombol Setujui/Tolak
+- Tombol "Tandai Selesai" (superadmin/keuangan, saat status Disetujui)
+- Hapus klaim: superadmin only
 
 ### Tracking Publik (`/resi/[nomor]`)
 
-- Halaman tanpa auth untuk customer
-- Step indicator milestone (diproses → diproduksi → dikirim → selesai)
-- Progress bar produksi (jika milestone diproduksi + ada persentase)
+- Halaman tanpa auth untuk customer — **sudah di-rewrite untuk entitas `pengiriman`**,
+  bukan `penjualan` lagi. Resi transaksi furniture lama otomatis jadi
+  "tidak ditemukan" di sini (disengaja, lihat `expedisi.md` §7)
+- Step indicator milestone 4-tahap (diproses → dijemput → dikirim → selesai),
+  tanpa progress bar persentase (field itu dihapus, hanya relevan utk
+  `diproduksi` furniture lama)
+- Badge jenis layanan (Reguler/Express/Kargo)
 - Riwayat update + foto per milestone, lightbox foto
-- Data dari view `tracking_publik` + `tracking_riwayat_publik`
+- Data dari view `pengiriman_publik` + `pengiriman_riwayat_publik`
 
 ### Katalog Reseller (`/katalog`)
 
@@ -1130,7 +1482,7 @@ Grid responsif, filter kategori, cart localStorage `bunganik_cart`, checkout WA.
 - **Foto barang yang diminta**: tiap item menampilkan foto produk (dari `produk_foto` urutan pertama, fallback `produk.foto_url`), atau ikon placeholder jika item custom (tidak terhubung produk)
 - **Foto Referensi PO**: foto umum yang diupload saat membuat PO (kolom `purchase_orders.foto_url`)
 - Detail peminta: nama pemohon (reseller/customer), telepon dengan `waLink()`, tanggal PO, estimasi selesai, dibuat oleh
-- Progress produksi: riwayat + form tambah update (role `produksi`/`superadmin`), sama seperti modal Progress di halaman list
+- Progress produksi: riwayat + form tambah update (role `gudang`/`superadmin`), sama seperti modal Progress di halaman list
 - Aksi: Mulai Proses, Tandai Selesai (dengan preview & opsi tambah stok — sama seperti modal Selesai di list), Batalkan, ubah prioritas, Hapus, Cetak PO
 
 ### Pencocokan Nota (`/dashboard/pencocokan`)
@@ -1252,6 +1604,29 @@ Daftar user, tambah via `/api/create-user` dengan `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### Sudah Selesai
 
+- [x] **Pivot Expedisi Fase 1** (17 Jul 2026) — entitas `pengiriman` baru
+  (terpisah dari `penjualan`), halaman `/dashboard/pengiriman` +
+  `/dashboard/pengiriman/[id]`, milestone 4-tahap linear, `/resi/[nomor]`
+  dialihkan ke view baru, print helper baru. Lihat `expedisi.md` §7 untuk
+  detail & fase selanjutnya (manifest, COD, klaim)
+- [x] **Pivot Expedisi Fase 2 — Pricing Engine** (17 Jul 2026) — tabel
+  `tarif_zona` (kota asal-tujuan + jenis layanan reguler/express, harga/kg +
+  minimum ongkir), halaman admin `/dashboard/tarif-zona`, auto-fill ongkir
+  di form `/dashboard/pengiriman` (tetap bisa override manual). Kargo tetap
+  manual quote, tidak pernah lookup tarif
+- [x] **Pivot Expedisi Fase 3 — Manifest & Armada** (17 Jul 2026) — tabel
+  `armada`/`manifest`/`manifest_item`, halaman `/dashboard/armada` +
+  `/dashboard/manifest` + `/dashboard/manifest/[id]`, bulk update milestone
+  kiriman via aksi Berangkat/Selesai di manifest. Sidebar section "Pengiriman"
+  lama di-rename jadi "Operasional Armada" (beresin naming collision Fase 1)
+- [x] **Pivot Expedisi Fase 4 — COD & Klaim** (18 Jul 2026) — tabel
+  `klaim` (nomor trigger `KLM-`, status `pending→disetujui/ditolak→selesai`,
+  snapshot resi/penerima karena `pengiriman_id` `ON DELETE SET NULL`) dan
+  `cod_setoran` (ledger setoran per sopir/kurir, tanpa nomor formal). Halaman
+  `/dashboard/klaim` (lapor + approve superadmin + tandai selesai) dan
+  `/dashboard/cod` (catat setoran + estimasi saldo COD per petugas). Sidebar
+  group baru "COD & Klaim". Modul sengaja ringan (bukan dashboard
+  rekonsiliasi harian) karena COD bukan metode pembayaran mayoritas
 - [x] Multi-foto produk (Supabase Storage + tabel `produk_foto`)
 - [x] Rekomendasi harga jual +25% di produk & detail publik
 - [x] Gallery foto di katalog publik + detail produk publik dengan lightbox
@@ -1268,8 +1643,8 @@ Daftar user, tambah via `/api/create-user` dengan `SUPABASE_SERVICE_ROLE_KEY`.
 - [x] **Pencocokan Nota** (`/dashboard/pencocokan`) — audit setelah proses
 - [x] **Meja Kerja Owner** (`/dashboard/owner/workspace`) — reminder, monitoring PO, tagihan, siklus settings
 - [x] **Modul HPP lengkap** — bahan baku (inline buttons), pembelian, BOM (estimasi biaya), batch produksi (HPP aktual), laporan HPP (variance chart)
-- [x] **Multi-role system** — superadmin, kasir, keuangan, cs, gudang, pengiriman, produksi, sopir
-- [x] **Delete penjualan** (superadmin, kasir, pengiriman, gudang, keuangan) — restore stok otomatis + catat mutasi_stok
+- [x] **Multi-role system** — superadmin, kasir, keuangan, cs, gudang, kurir, sopir (role `produksi` dihapus & `pengiriman` di-rename jadi `kurir` saat pivot expedisi)
+- [x] **Delete penjualan** (superadmin, kasir, kurir, gudang, keuangan) — restore stok otomatis + catat mutasi_stok
 - [x] **Pelunasan / Catat Pembayaran** — superadmin + kasir + keuangan, upload foto bukti transfer
 - [x] **Kode internal gate** pada `/produk/[id]` — server-side verify, sessionStorage per tab
 - [x] **Katalog umum `/toko`** — pembeli umum, harga +25%, cart terpisah, WA checkout
@@ -1294,7 +1669,7 @@ npm install @opentelemetry/api   # jika ada error module not found
 ```sql
 -- Set role user
 UPDATE profiles SET role = 'superadmin' WHERE id = 'user-uuid';
--- role lain: kasir | keuangan | cs | gudang | pengiriman | produksi | sopir
+-- role lain: kasir | keuangan | cs | gudang | kurir | sopir
 
 -- Konfirmasi email
 UPDATE auth.users SET email_confirmed_at = NOW() WHERE email = 'user@email.com';

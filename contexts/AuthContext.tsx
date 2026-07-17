@@ -15,8 +15,7 @@ interface AuthContextType {
   isKeuangan: boolean
   isCS: boolean
   isGudang: boolean
-  isPengiriman: boolean
-  isProduksi: boolean
+  isKurir: boolean
   isSopir: boolean
   canAccessPenjualan: boolean
   canAccessPO: boolean
@@ -33,8 +32,7 @@ const AuthContext = createContext<AuthContextType>({
   isKeuangan: false,
   isCS: false,
   isGudang: false,
-  isPengiriman: false,
-  isProduksi: false,
+  isKurir: false,
   isSopir: false,
   canAccessPenjualan: false,
   canAccessPO: false,
@@ -92,11 +90,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isKeuangan:        r === 'keuangan',
       isCS:              r === 'cs',
       isGudang:          r === 'gudang',
-      isPengiriman:      r === 'pengiriman',
-      isProduksi:        r === 'produksi',
+      isKurir:           r === 'kurir',
       isSopir:           r === 'sopir',
-      canAccessPenjualan: ['superadmin','keuangan','pengiriman','sopir','kasir','gudang'].includes(r ?? ''),
-      canAccessPO:        ['superadmin','cs','gudang','produksi','pengiriman'].includes(r ?? ''),
+      canAccessPenjualan: ['superadmin','keuangan','kurir','sopir','kasir','gudang'].includes(r ?? ''),
+      canAccessPO:        ['superadmin','cs','gudang','kurir'].includes(r ?? ''),
       canAccessStok:      ['superadmin','gudang','kasir'].includes(r ?? ''),
     }}>
       {children}

@@ -1,4 +1,5 @@
-export type Role = 'superadmin' | 'kasir' | 'keuangan' | 'cs' | 'gudang' | 'pengiriman' | 'produksi' | 'sopir'
+export type { Role } from './roles'
+import type { Role } from './roles'
 
 export interface Profile {
   id: string
@@ -89,6 +90,118 @@ export interface Penjualan {
   reseller?: Reseller
   items?: PenjualanItem[]
   profile?: Profile
+}
+
+export type JenisLayanan = 'reguler' | 'express' | 'kargo'
+export type MilestonePengiriman = 'diproses' | 'dijemput' | 'dikirim' | 'selesai'
+
+export interface Pengiriman {
+  id: string
+  nomor_faktur: string
+  nomor_resi?: string
+  tanggal: string
+
+  jenis_layanan: JenisLayanan
+
+  pengirim_nama: string
+  pengirim_telepon?: string
+  pengirim_alamat?: string
+  pengirim_kota?: string
+
+  penerima_nama: string
+  penerima_telepon?: string
+  penerima_alamat?: string
+  penerima_kota?: string
+
+  berat_kg: number
+  panjang_cm?: number
+  lebar_cm?: number
+  tinggi_cm?: number
+  berat_volumetrik_kg?: number
+
+  isi_barang?: string
+  nilai_barang?: number
+
+  ongkir: number
+  biaya_asuransi: number
+  total_tagihan: number
+
+  status_bayar: 'lunas' | 'dp' | 'belum_bayar'
+  metode_bayar: 'transfer' | 'cod' | 'cash'
+  uang_dp: number
+
+  milestone: MilestonePengiriman
+
+  petugas_nama?: string
+  petugas_telepon?: string
+
+  catatan?: string
+  catatan_internal?: string
+  created_by?: string
+  created_at: string
+  updated_at: string
+
+  pembayaran?: PengirimanPembayaran[]
+  profile?: Profile
+}
+
+export interface PengirimanTracking {
+  id: string
+  pengiriman_id: string
+  milestone: MilestonePengiriman
+  catatan?: string
+  foto_url?: string
+  created_by?: string
+  created_at: string
+  creator?: { name: string }
+}
+
+export interface PengirimanPembayaran {
+  id: string
+  pengiriman_id: string
+  jumlah: number
+  metode: 'transfer' | 'cod' | 'cash'
+  catatan?: string
+  foto_url?: string
+  created_at: string
+}
+
+export type KlaimTipe = 'hilang' | 'rusak'
+export type KlaimStatus = 'pending' | 'disetujui' | 'ditolak' | 'selesai'
+
+export interface Klaim {
+  id: string
+  nomor_klaim: string
+  pengiriman_id: string | null
+  pengiriman_nomor_resi?: string
+  pengiriman_penerima_nama?: string
+  tipe: KlaimTipe
+  status: KlaimStatus
+  nilai_klaim: number
+  nilai_disetujui?: number
+  kronologi?: string
+  catatan_approval?: string
+  foto_bukti?: string
+  created_by?: string
+  approved_by?: string
+  approved_at?: string
+  created_at: string
+  updated_at: string
+  creator?: { name: string }
+  approver?: { name: string }
+}
+
+export interface CodSetoran {
+  id: string
+  sopir_id: string
+  jumlah: number
+  tanggal_setor: string
+  catatan?: string
+  foto_bukti?: string
+  created_by?: string
+  created_at: string
+  sopir?: { name: string }
+  creator?: { name: string }
 }
 
 export interface DashboardStats {

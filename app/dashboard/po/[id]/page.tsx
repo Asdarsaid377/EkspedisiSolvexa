@@ -97,8 +97,7 @@ const PO_ROLES = [
 	"superadmin",
 	"cs",
 	"gudang",
-	"produksi",
-	"pengiriman",
+	"kurir",
 	"keuangan",
 	"kasir",
 ];
@@ -143,7 +142,7 @@ export default function PODetailPage() {
 	const [selesaiMasukStok, setSelesaiMasukStok] = useState(true);
 	const [selesaiLoading, setSelesaiLoading] = useState(false);
 
-	const canAddProgress = role === "produksi" || role === "superadmin";
+	const canAddProgress = role === "gudang" || role === "superadmin";
 	const [progressList, setProgressList] = useState<any[]>([]);
 	const [progressLoading, setProgressLoading] = useState(false);
 	const [progTanggal, setProgTanggal] = useState("");

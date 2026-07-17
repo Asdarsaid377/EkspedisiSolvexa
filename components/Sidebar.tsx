@@ -42,6 +42,9 @@ import {
 	Navigation,
 	Briefcase,
 	UserCog,
+	PackageCheck,
+	DollarSign,
+	ShieldAlert,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -57,7 +60,7 @@ const navItems = [
 		href: "/dashboard/absensi",
 		label: "Absensi",
 		icon: ScanFace,
-		roles: ["superadmin", "kasir", "keuangan", "cs", "gudang", "pengiriman", "produksi", "sopir"],
+		roles: ["superadmin", "kasir", "keuangan", "cs", "gudang", "kurir", "sopir"],
 	},
 	// Furniture-specific — tidak dibutuhkan untuk expedisi
 	// {
@@ -84,14 +87,14 @@ const penjualanItems = [
 		href: "/dashboard/penjualan",
 		label: "Penjualan",
 		icon: ShoppingCart,
-		roles: ["superadmin", "keuangan", "pengiriman", "sopir", "kasir", "gudang"],
+		roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
 	},
 	// Furniture retail — tidak dibutuhkan untuk expedisi
 	// {
 	// 	href: "/dashboard/pos",
 	// 	label: "Kasir (POS)",
 	// 	icon: Store,
-	// 	roles: ["superadmin", "keuangan", "pengiriman", "sopir", "kasir", "gudang"],
+	// 	roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
 	// },
 ];
 
@@ -106,7 +109,7 @@ const resellerItems: {
 	// 	href: "/dashboard/reseller",
 	// 	label: "Reseller",
 	// 	icon: Users,
-	// 	roles: ["superadmin", "keuangan", "cs", "kasir", "gudang", "pengiriman"],
+	// 	roles: ["superadmin", "keuangan", "cs", "kasir", "gudang", "kurir"],
 	// },
 	// {
 	// 	href: "/dashboard/pengumuman",
@@ -122,20 +125,60 @@ const resellerItems: {
 	// },
 ];
 
+// Grup "Operasional Armada" — GPS live sopir/kurir + manajemen armada + manifest (Fase 3).
+// Nama section sengaja dibedakan dari nav flat "Pengiriman" (Fase 1) biar tidak rancu.
 const pengirimanItems = [
 	{
 		href: "/dashboard/lacak-pengiriman",
-		label: "Lacak Pengiriman",
+		label: "Lacak GPS Sopir",
 		icon: Navigation,
-		roles: ["superadmin", "cs", "gudang", "pengiriman"],
+		roles: ["superadmin", "cs", "gudang", "kurir"],
+	},
+	{
+		href: "/dashboard/armada",
+		label: "Armada",
+		icon: Truck,
+		roles: ["superadmin", "gudang"],
+	},
+	{
+		href: "/dashboard/manifest",
+		label: "Manifest",
+		icon: ClipboardList,
+		roles: ["superadmin", "gudang", "sopir", "kurir", "cs", "keuangan", "kasir"],
 	},
 	// Custom order furniture — tidak dibutuhkan untuk expedisi
 	// {
 	// 	href: "/dashboard/po",
 	// 	label: "Purchase Order",
 	// 	icon: ClipboardList,
-	// 	roles: ["superadmin", "cs", "gudang", "produksi", "pengiriman", "keuangan", "kasir"],
+	// 	roles: ["superadmin", "cs", "gudang", "kurir", "keuangan", "kasir"],
 	// },
+];
+
+// Grup "COD & Klaim" (Fase 4) — ledger setoran COD per sopir/kurir + proses klaim barang hilang/rusak
+const codKlaimItems = [
+	{
+		href: "/dashboard/cod",
+		label: "Setoran COD",
+		icon: Wallet,
+		roles: ["superadmin", "keuangan", "kasir", "gudang", "kurir", "sopir"],
+	},
+	{
+		href: "/dashboard/klaim",
+		label: "Klaim",
+		icon: ShieldAlert,
+		roles: ["superadmin", "keuangan", "cs", "gudang", "kurir", "sopir"],
+	},
+];
+
+// Entitas Pengiriman (Fase 1) — order/resi/tracking, pengganti Penjualan+Produk furniture
+const pengirimanEntitasItems = [
+	{
+		href: "/dashboard/pengiriman",
+		label: "Pengiriman",
+		icon: PackageCheck,
+		roles: ["superadmin", "cs", "kasir", "keuangan", "gudang", "kurir", "sopir"],
+	},
 ];
 
 // Kontrol penjualan retail furniture — tidak dibutuhkan untuk expedisi
@@ -204,6 +247,7 @@ const hppItems: { href: string; label: string; icon: any }[] = [
 
 const adminItems = [
 	{ href: "/dashboard/pengguna", label: "Pengguna", icon: Settings },
+	{ href: "/dashboard/tarif-zona", label: "Tarif Zona", icon: DollarSign },
 ];
 
 // Didefinisikan di luar komponen agar referensi fungsi stabil — cegah unmount/remount tiap re-render
@@ -286,6 +330,12 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 	const visiblePengirimanItems = pengirimanItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
+	const visiblePengirimanEntitasItems = pengirimanEntitasItems.filter((item) =>
+		item.roles.includes(role ?? ""),
+	);
+	const visibleCodKlaimItems = codKlaimItems.filter((item) =>
+		item.roles.includes(role ?? ""),
+	);
 	const visibleKontrolItems = kontrolItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
@@ -308,6 +358,8 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 		pathname.startsWith(i.href),
 	);
 	const [pengirimanOpen, setPengirimanOpen] = useState(isPengirimanActive);
+	const isCodKlaimActive = codKlaimItems.some((i) => pathname.startsWith(i.href));
+	const [codKlaimOpen, setCodKlaimOpen] = useState(isCodKlaimActive);
 	const isKontrolActive = kontrolItems.some((i) => pathname.startsWith(i.href));
 	const [kontrolOpen, setKontrolOpen] = useState(isKontrolActive);
 	const isHppActive = hppItems.some((i) => pathname.startsWith(i.href));
@@ -334,6 +386,11 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 					Menu
 				</p>
 				{visibleNavItems.map((item) => (
+					<NavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+				))}
+
+				{/* Entitas Pengiriman (Fase 1) — order/resi/tracking expedisi */}
+				{visiblePengirimanEntitasItems.map((item) => (
 					<NavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
 				))}
 
@@ -412,7 +469,7 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 					</div>
 				)}
 
-				{/* Collapsible Pengiriman & PO */}
+				{/* Collapsible Operasional Armada — Lacak GPS, Armada, Manifest */}
 				{visiblePengirimanItems.length > 0 && (
 					<div>
 						<button
@@ -424,12 +481,37 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
 							)}>
 							<Truck size={18} />
-							<span className="flex-1 text-left">Pengiriman</span>
+							<span className="flex-1 text-left">Operasional Armada</span>
 							{pengirimanOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
 						</button>
 						{pengirimanOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visiblePengirimanItems.map((item) => (
+									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+								))}
+							</div>
+						)}
+					</div>
+				)}
+
+				{/* Collapsible COD & Klaim (Fase 4) */}
+				{visibleCodKlaimItems.length > 0 && (
+					<div>
+						<button
+							onClick={() => setCodKlaimOpen(!codKlaimOpen)}
+							className={cn(
+								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
+								isCodKlaimActive
+									? "bg-indigo-50 text-indigo-700"
+									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+							)}>
+							<Wallet size={18} />
+							<span className="flex-1 text-left">COD & Klaim</span>
+							{codKlaimOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+						</button>
+						{codKlaimOpen && (
+							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
+								{visibleCodKlaimItems.map((item) => (
 									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
 								))}
 							</div>

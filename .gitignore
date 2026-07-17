@@ -5,3 +5,7 @@ node_modules
 .env*
 !.env.example
 .DS_Store
+
+# Dump & file hasil migrasi data VPS -> local, jangan ikut di-commit (PII + password hash)
+vps_dump.sql
+storage-migration/

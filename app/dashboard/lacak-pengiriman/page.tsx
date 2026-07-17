@@ -26,7 +26,7 @@ const SopirTrackingMap = dynamic(
 	},
 );
 
-// const ALLOWED_ROLES = ["superadmin", "cs", "gudang", "pengiriman"];
+// const ALLOWED_ROLES = ["superadmin", "cs", "gudang", "kurir"];
 const ALLOWED_ROLES = ["superadmin"];
 const POLLING_MS = 15_000;
 const ONLINE_THRESHOLD_MIN = 5;

@@ -103,7 +103,7 @@ function urgencyRank(po: any): [number, number] {
 	return estTime < todayTime ? [0, estTime] : [1, estTime];
 }
 
-const PO_ROLES = ["superadmin","cs","gudang","produksi","pengiriman","keuangan","kasir"];
+const PO_ROLES = ["superadmin","cs","gudang","kurir","keuangan","kasir"];
 
 export default function POPage() {
 	const { profile, role, loading: authLoading } = useAuth();
@@ -147,7 +147,7 @@ export default function POPage() {
 	const [progSaving, setProgSaving] = useState(false);
 	const [progError, setProgError] = useState("");
 
-	const canAddProgress = role === "produksi" || role === "superadmin";
+	const canAddProgress = role === "gudang" || role === "superadmin";
 	const canEditPO = PO_EDIT_ROLES.includes(role ?? "");
 
 	// Edit PO

@@ -76,12 +76,12 @@ export default function ResellerPage() {
 		role === "keuangan" ||
 		role === "kasir" ||
 		role === "gudang" ||
-		role === "pengiriman";
+		role === "kurir";
 	const canAksesLinkReseller =
 		canBayarBonus ||
 		role === "kasir" ||
 		role === "gudang" ||
-		role === "pengiriman";
+		role === "kurir";
 	const [resellers, setResellers] = useState<Reseller[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [search, setSearch] = useState("");

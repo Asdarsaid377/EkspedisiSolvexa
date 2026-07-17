@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { Profile } from '@/lib/types'
-import { Plus, Shield, User, X, Eye, EyeOff, Wallet, MessageCircle, Package, Truck, Factory, Car } from 'lucide-react'
+import { Plus, Shield, User, X, Eye, EyeOff, Wallet, MessageCircle, Package, Truck, Car } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 const ROLES: { value: string; label: string; color: string; Icon: any }[] = [
@@ -13,8 +13,7 @@ const ROLES: { value: string; label: string; color: string; Icon: any }[] = [
   { value: 'keuangan',   label: 'Keuangan',     color: 'bg-emerald-100 text-emerald-700', Icon: Wallet },
   { value: 'cs',         label: 'CS',           color: 'bg-pink-100 text-pink-700',    Icon: MessageCircle },
   { value: 'gudang',     label: 'Gudang',       color: 'bg-amber-100 text-amber-700',  Icon: Package },
-  { value: 'pengiriman', label: 'Pengiriman',   color: 'bg-cyan-100 text-cyan-700',    Icon: Truck },
-  { value: 'produksi',   label: 'Produksi',     color: 'bg-orange-100 text-orange-700',Icon: Factory },
+  { value: 'kurir',      label: 'Kurir',        color: 'bg-cyan-100 text-cyan-700',    Icon: Truck },
   { value: 'sopir',      label: 'Sopir',        color: 'bg-gray-100 text-gray-700',    Icon: Car },
 ]
 

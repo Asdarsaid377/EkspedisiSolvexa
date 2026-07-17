@@ -43,7 +43,7 @@ const BAR_COLORS = [
 	"#ec4899","#f43f5e","#f97316","#f59e0b","#84cc16","#22c55e",
 ];
 
-const LAP_ROLES = ["superadmin", "keuangan", "produksi"];
+const LAP_ROLES = ["superadmin", "keuangan"];
 
 export default function LaporanTukangPage() {
 	const { role, loading: authLoading } = useAuth();

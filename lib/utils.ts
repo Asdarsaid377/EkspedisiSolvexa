@@ -318,3 +318,31 @@ export async function insertPenjualanWithResi(
 		error: { message: "Gagal generate nomor resi unik setelah 5 percobaan" },
 	};
 }
+
+export async function insertPengirimanWithResi(
+	supabase: any,
+	payload: Record<string, any>,
+	maxRetry = 5,
+): Promise<{ data: any; error: any }> {
+	for (let i = 0; i < maxRetry; i++) {
+		const nomor_resi = generateNomorResi();
+		const { data, error } = await supabase
+			.from("pengiriman")
+			.insert({ ...payload, nomor_resi })
+			.select()
+			.single();
+
+		if (!error) return { data, error: null };
+
+		// 23505 = unique_violation — coba resi baru
+		if (error.code === "23505" && error.message?.includes("nomor_resi"))
+			continue;
+
+		// Error lain langsung return
+		return { data: null, error };
+	}
+	return {
+		data: null,
+		error: { message: "Gagal generate nomor resi unik setelah 5 percobaan" },
+	};
+}

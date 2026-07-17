@@ -250,11 +250,11 @@ export default function DetailPenjualanPage() {
 	): boolean => {
 		if (!next) return false;
 		if (isSuperAdmin) return true;
-		if (next === "diproduksi") return role === "produksi" && hasPO;
+		if (next === "diproduksi") return role === "gudang" && hasPO;
 		if (next === "dikirim")
 			return (
 				role === "gudang" ||
-				role === "pengiriman" ||
+				role === "kurir" ||
 				role === "keuangan" ||
 				role === "sopir" ||
 				role === "kasir"
@@ -262,7 +262,7 @@ export default function DetailPenjualanPage() {
 		if (next === "selesai")
 			return (
 				role === "sopir" ||
-				role === "pengiriman" ||
+				role === "kurir" ||
 				role === "keuangan" ||
 				role === "kasir"
 			);
@@ -653,7 +653,7 @@ export default function DetailPenjualanPage() {
 					)}
 					{(isSuperAdmin ||
 						role === "kasir" ||
-						role === "pengiriman" ||
+						role === "kurir" ||
 						role === "gudang" ||
 						role === "keuangan") && (
 						<button
