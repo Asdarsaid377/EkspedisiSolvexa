@@ -7,6 +7,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { formatRupiah, formatDate, waLink } from "@/lib/utils";
 import { printPengirimanInvoice } from "@/lib/printPengirimanInvoice";
 import { printPengirimanResi } from "@/lib/printPengirimanResi";
+import { MilestonePengiriman, AlasanGagal, TransitTipeEvent } from "@/lib/types";
+import { getNextMilestones, ALASAN_GAGAL_CFG } from "@/lib/pengirimanConstants";
+import { logAktivitas } from "@/lib/aktivitas";
+import { submitGagalKirim as submitGagalKirimAksi, submitSelesaiPOD as submitSelesaiPodAksi } from "@/lib/pengirimanAksi";
 import { QRCodeCanvas } from "qrcode.react";
 import {
 	ArrowLeft,
@@ -34,16 +38,26 @@ import {
 	RotateCcw,
 	StickyNote,
 	Clock,
+	PackageX,
+	Undo2,
+	Camera,
+	ArrowDownToLine,
+	ArrowUpFromLine,
 } from "lucide-react";
 import Link from "next/link";
 
-const MILESTONES = ["diproses", "dijemput", "dikirim", "selesai"] as const;
-type Milestone = (typeof MILESTONES)[number];
+type Milestone = MilestonePengiriman;
+
+// Node visual stepper (jalur sukses) — gagal_kirim/retur ditampilkan sebagai
+// banner terpisah di bawah stepper, bukan node ke-5/6 (lihat §3 spec POD).
+const HAPPY_PATH: Milestone[] = ["diproses", "dijemput", "dikirim", "selesai"];
 
 const MILESTONE_LABEL: Record<Milestone, string> = {
 	diproses: "Diproses",
 	dijemput: "Dijemput",
 	dikirim: "Dikirim",
+	gagal_kirim: "Gagal Kirim",
+	retur: "Retur",
 	selesai: "Selesai",
 };
 
@@ -91,14 +105,52 @@ export default function DetailPengirimanPage() {
 	const [deleting, setDeleting] = useState(false);
 	const [deleteError, setDeleteError] = useState("");
 
-	// Tracking / milestone
+	// Tracking / milestone (generic — dipakai utk diproses→dijemput, dijemput→dikirim,
+	// dan gagal_kirim→dikirim kirim ulang manual)
 	const [trackingList, setTrackingList] = useState<any[]>([]);
 	const [modalMilestone, setModalMilestone] = useState(false);
+	const [msTarget, setMsTarget] = useState<Milestone | null>(null);
 	const [msKeterangan, setMsKeterangan] = useState("");
 	const [msFotoFile, setMsFotoFile] = useState<File | null>(null);
 	const [msFotoPreview, setMsFotoPreview] = useState<string | null>(null);
 	const [msSaving, setMsSaving] = useState(false);
 	const [msError, setMsError] = useState("");
+
+	// Riwayat Transit (spec 09) — log paralel, TIDAK PERNAH mengubah
+	// milestone. Form manual: superadmin/gudang/kurir/sopir (§4 spec 09).
+	const [transitList, setTransitList] = useState<any[]>([]);
+	const [cabangList, setCabangList] = useState<{ id: string; nama: string; kota: string | null }[]>(
+		[],
+	);
+	const [transitCabangId, setTransitCabangId] = useState("");
+	const [transitTipe, setTransitTipe] = useState<TransitTipeEvent>("tiba");
+	const [transitCatatan, setTransitCatatan] = useState("");
+	const [transitSaving, setTransitSaving] = useState(false);
+	const [transitError, setTransitError] = useState("");
+
+	// Modal Gagal Kirim (dikirim → gagal_kirim)
+	const [modalGagal, setModalGagal] = useState(false);
+	const [gagalAlasan, setGagalAlasan] = useState<AlasanGagal | "">("");
+	const [gagalCatatan, setGagalCatatan] = useState("");
+	const [gagalFotoFile, setGagalFotoFile] = useState<File | null>(null);
+	const [gagalFotoPreview, setGagalFotoPreview] = useState<string | null>(null);
+	const [gagalSaving, setGagalSaving] = useState(false);
+	const [gagalError, setGagalError] = useState("");
+
+	// Modal Tandai Selesai — POD wajib (dikirim → selesai)
+	const [modalSelesai, setModalSelesai] = useState(false);
+	const [podNama, setPodNama] = useState("");
+	const [podCatatan, setPodCatatan] = useState("");
+	const [podFotoFile, setPodFotoFile] = useState<File | null>(null);
+	const [podFotoPreview, setPodFotoPreview] = useState<string | null>(null);
+	const [podSaving, setPodSaving] = useState(false);
+	const [podError, setPodError] = useState("");
+
+	// Modal Retur ke Pengirim (gagal_kirim → retur, terminal)
+	const [modalRetur, setModalRetur] = useState(false);
+	const [returCatatan, setReturCatatan] = useState("");
+	const [returSaving, setReturSaving] = useState(false);
+	const [returError, setReturError] = useState("");
 
 	useEffect(() => {
 		if (!id) return;
@@ -107,18 +159,27 @@ export default function DetailPengirimanPage() {
 
 	const load = async () => {
 		setLoading(true);
-		const [{ data: pg }, { data: tracking }] = await Promise.all([
-			supabase
-				.from("pengiriman")
-				.select("*, pembayaran:pengiriman_pembayaran(*)")
-				.eq("id", id)
-				.single(),
-			supabase
-				.from("pengiriman_tracking")
-				.select("*, creator:profiles!created_by(name)")
-				.eq("pengiriman_id", id)
-				.order("created_at", { ascending: true }),
-		]);
+		const [{ data: pg }, { data: tracking }, { data: transit }, { data: cabang }] =
+			await Promise.all([
+				supabase
+					.from("pengiriman")
+					.select("*, pembayaran:pengiriman_pembayaran(*)")
+					.eq("id", id)
+					.single(),
+				supabase
+					.from("pengiriman_tracking")
+					.select("*, creator:profiles!created_by(name)")
+					.eq("pengiriman_id", id)
+					.order("created_at", { ascending: true }),
+				supabase
+					.from("pengiriman_transit")
+					.select(
+						"*, cabang:cabang(nama, kota), creator:profiles!created_by(name), manifest:manifest(nomor_manifest)",
+					)
+					.eq("pengiriman_id", id)
+					.order("created_at", { ascending: true }),
+				supabase.from("cabang").select("id, nama, kota").eq("aktif", true).order("nama"),
+			]);
 		if (!pg) {
 			setNotFound(true);
 			setLoading(false);
@@ -126,6 +187,8 @@ export default function DetailPengirimanPage() {
 		}
 		setData(pg);
 		setTrackingList(tracking || []);
+		setTransitList(transit || []);
+		setCabangList(cabang || []);
 		setLoading(false);
 	};
 
@@ -144,39 +207,81 @@ export default function DetailPengirimanPage() {
 		setCatatanInternalEdit(false);
 	};
 
-	// ── Milestone logic — 4 tahap linear, tanpa percabangan ──
-	const getNextMilestone = (current: Milestone): Milestone | null => {
-		const idx = MILESTONES.indexOf(current);
-		if (idx === -1 || idx === MILESTONES.length - 1) return null;
-		return MILESTONES[idx + 1];
-	};
-
-	const canUpdate = (next: Milestone | null): boolean => {
-		if (!next) return false;
+	// ── Milestone logic — peta transisi bercabang, lihat docs/spec/01-gagal-kirim-pod.md §3/§4 ──
+	const canTransition = (from: Milestone, to: Milestone): boolean => {
 		if (isSuperAdmin) return true;
-		if (next === "dijemput") return role === "gudang" || role === "kurir";
-		if (next === "dikirim")
-			return (
-				role === "gudang" ||
-				role === "kurir" ||
-				role === "keuangan" ||
-				role === "sopir" ||
-				role === "kasir"
-			);
-		if (next === "selesai")
-			return (
-				role === "sopir" ||
-				role === "kurir" ||
-				role === "keuangan" ||
-				role === "kasir"
-			);
+		if (from === "diproses" && to === "dijemput")
+			return role === "gudang" || role === "kurir";
+		if (from === "dijemput" && to === "dikirim")
+			return ["gudang", "kurir", "keuangan", "sopir", "kasir"].includes(role ?? "");
+		if (from === "dikirim" && to === "selesai")
+			return ["sopir", "kurir", "keuangan", "kasir"].includes(role ?? "");
+		if (from === "dikirim" && to === "gagal_kirim")
+			return ["sopir", "kurir", "kasir", "keuangan"].includes(role ?? "");
+		if (from === "gagal_kirim" && to === "dikirim")
+			return ["gudang", "kurir", "sopir"].includes(role ?? "");
+		if (from === "gagal_kirim" && to === "retur")
+			return ["cs", "gudang"].includes(role ?? "");
 		return false;
 	};
 
+	const reloadTracking = async () => {
+		const { data: tracking } = await supabase
+			.from("pengiriman_tracking")
+			.select("*, creator:profiles!created_by(name)")
+			.eq("pengiriman_id", id)
+			.order("created_at", { ascending: true });
+		setTrackingList(tracking || []);
+	};
+
+	// Riwayat Transit (spec 09) — log paralel, TIDAK PERNAH menyentuh
+	// milestone/pengiriman_tracking. §4: role sama dengan akses transisi
+	// milestone dikirim (superadmin, gudang, kurir, sopir) — cs TIDAK bisa.
+	const canInputTransit = isSuperAdmin || ["gudang", "kurir", "sopir"].includes(role ?? "");
+
+	const reloadTransit = async () => {
+		const { data: transit } = await supabase
+			.from("pengiriman_transit")
+			.select(
+				"*, cabang:cabang(nama, kota), creator:profiles!created_by(name), manifest:manifest(nomor_manifest)",
+			)
+			.eq("pengiriman_id", id)
+			.order("created_at", { ascending: true });
+		setTransitList(transit || []);
+	};
+
+	const addTransit = async () => {
+		if (!transitCabangId) {
+			setTransitError("Pilih hub/cabang terlebih dahulu.");
+			return;
+		}
+		setTransitSaving(true);
+		setTransitError("");
+
+		const { error } = await supabase.from("pengiriman_transit").insert({
+			pengiriman_id: id,
+			cabang_id: transitCabangId,
+			tipe_event: transitTipe,
+			catatan: transitCatatan.trim() || null,
+			created_by: profile?.id,
+		});
+
+		if (error) {
+			setTransitError("Gagal menyimpan: " + error.message);
+			setTransitSaving(false);
+			return;
+		}
+
+		setTransitCabangId("");
+		setTransitTipe("tiba");
+		setTransitCatatan("");
+		setTransitSaving(false);
+		await reloadTransit();
+	};
+
 	const submitMilestone = async () => {
-		if (!data) return;
-		const next = getNextMilestone(data.milestone ?? "diproses");
-		if (!next) return;
+		if (!data || !msTarget) return;
+		const next = msTarget;
 		setMsSaving(true);
 		setMsError("");
 
@@ -209,18 +314,101 @@ export default function DetailPengirimanPage() {
 		await supabase.from("pengiriman").update({ milestone: next }).eq("id", data.id);
 
 		setData((d: any) => ({ ...d, milestone: next }));
-		const { data: tracking } = await supabase
-			.from("pengiriman_tracking")
-			.select("*, creator:profiles!created_by(name)")
-			.eq("pengiriman_id", data.id)
-			.order("created_at", { ascending: true });
-		setTrackingList(tracking || []);
+		await reloadTracking();
 
 		setMsSaving(false);
 		setModalMilestone(false);
+		setMsTarget(null);
 		setMsKeterangan("");
 		setMsFotoFile(null);
 		setMsFotoPreview(null);
+	};
+
+	const submitGagalKirim = async () => {
+		if (!data) return;
+		if (!gagalAlasan) {
+			setGagalError("Alasan gagal wajib dipilih.");
+			return;
+		}
+		setGagalSaving(true);
+		setGagalError("");
+
+		const result = await submitGagalKirimAksi(supabase, {
+			pengirimanId: data.id,
+			jumlahGagalSebelum: data.jumlah_gagal || 0,
+			alasan: gagalAlasan,
+			catatan: gagalCatatan,
+			fotoFile: gagalFotoFile,
+			createdBy: profile?.id,
+		});
+		if (!result.ok) {
+			setGagalError(result.error || "Gagal menyimpan.");
+			setGagalSaving(false);
+			return;
+		}
+
+		setGagalSaving(false);
+		setModalGagal(false);
+		setGagalAlasan("");
+		setGagalCatatan("");
+		setGagalFotoFile(null);
+		setGagalFotoPreview(null);
+		load();
+	};
+
+	const submitSelesaiPOD = async () => {
+		if (!data) return;
+		if (podNama.trim().length < 2) {
+			setPodError("Nama penerima wajib diisi (minimal 2 karakter).");
+			return;
+		}
+		if (!podFotoFile) {
+			setPodError("Foto bukti serah terima (POD) wajib diupload.");
+			return;
+		}
+		setPodSaving(true);
+		setPodError("");
+
+		const result = await submitSelesaiPodAksi(supabase, {
+			pengirimanId: data.id,
+			podNama,
+			podCatatan,
+			podFotoFile,
+			createdBy: profile?.id,
+		});
+		if (!result.ok) {
+			setPodError(result.error || "Gagal menyimpan.");
+			setPodSaving(false);
+			return;
+		}
+
+		setPodSaving(false);
+		setModalSelesai(false);
+		setPodNama("");
+		setPodCatatan("");
+		setPodFotoFile(null);
+		setPodFotoPreview(null);
+		load();
+	};
+
+	const submitRetur = async () => {
+		if (!data) return;
+		setReturSaving(true);
+		setReturError("");
+
+		await supabase.from("pengiriman_tracking").insert({
+			pengiriman_id: data.id,
+			milestone: "retur",
+			catatan: returCatatan.trim() || null,
+			created_by: profile?.id,
+		});
+
+		await supabase.from("pengiriman").update({ milestone: "retur" }).eq("id", data.id);
+
+		setReturSaving(false);
+		setModalRetur(false);
+		setReturCatatan("");
+		load();
 	};
 
 	const savePelunasan = async () => {
@@ -353,6 +541,22 @@ export default function DetailPengirimanPage() {
 			.update({ uang_dp: newUangDp, status_bayar: newStatus })
 			.eq("id", data.id);
 
+		await logAktivitas(supabase, {
+			aksi: "rollback_pembayaran",
+			entitas: "pengiriman_pembayaran",
+			entitas_id: p.id,
+			ref: data.nomor_faktur,
+			detail: {
+				jumlah: p.jumlah,
+				metode: p.metode,
+				uang_dp_sebelum: data.uang_dp,
+				uang_dp_sesudah: newUangDp,
+				status_bayar_sebelum: data.status_bayar,
+				status_bayar_sesudah: newStatus,
+			},
+			created_by: profile?.id,
+		});
+
 		setRollbackingId(null);
 		load();
 	};
@@ -368,6 +572,21 @@ export default function DetailPengirimanPage() {
 			setDeleting(false);
 			return;
 		}
+
+		await logAktivitas(supabase, {
+			aksi: "delete_pengiriman",
+			entitas: "pengiriman",
+			entitas_id: data.id,
+			ref: data.nomor_faktur,
+			detail: {
+				nomor_resi: data.nomor_resi,
+				penerima_nama: data.penerima_nama,
+				total_tagihan: data.total_tagihan,
+				status_bayar: data.status_bayar,
+				milestone: data.milestone,
+			},
+			created_by: profile?.id,
+		});
 
 		router.push("/dashboard/pengiriman");
 	};
@@ -409,9 +628,15 @@ export default function DetailPengirimanPage() {
 
 	const sisa = data.total_tagihan - (data.uang_dp || 0);
 	const current: Milestone = data.milestone ?? "diproses";
-	const next = getNextMilestone(current);
-	const canUpd = canUpdate(next);
-	const currentIdx = MILESTONES.indexOf(current);
+	const isBranch = current === "gagal_kirim" || current === "retur";
+	// Node stepper hanya render jalur sukses — saat gagal_kirim/retur, node
+	// diproses/dijemput/dikirim tampil "selesai" (hijau) tapi node terakhir
+	// tidak aktif; state sebenarnya dijelaskan lewat banner di bawah stepper.
+	const currentIdx = isBranch ? HAPPY_PATH.length - 1 : HAPPY_PATH.indexOf(current);
+	const nextOptions = getNextMilestones(current).filter((n) => canTransition(current, n));
+	const latestGagal = [...trackingList]
+		.reverse()
+		.find((t) => t.milestone === "gagal_kirim");
 
 	return (
 		<div className="max-w-4xl mx-auto">
@@ -652,17 +877,29 @@ export default function DetailPengirimanPage() {
 						<h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
 							Status Pengiriman
 						</h2>
-						{data.nomor_resi && (
-							<span className="text-xs font-mono text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">
-								{data.nomor_resi}
-							</span>
-						)}
+						<div className="flex items-center gap-2">
+							{(data.jumlah_gagal || 0) > 0 && (
+								<span
+									className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-semibold ${
+										data.jumlah_gagal >= 3
+											? "bg-red-100 text-red-700"
+											: "bg-amber-100 text-amber-700"
+									}`}>
+									<PackageX size={12} /> {data.jumlah_gagal}x Gagal Kirim
+								</span>
+							)}
+							{data.nomor_resi && (
+								<span className="text-xs font-mono text-gray-400 bg-gray-50 px-2 py-1 rounded-lg">
+									{data.nomor_resi}
+								</span>
+							)}
+						</div>
 					</div>
 
 					<div className="flex items-center mb-5">
-						{MILESTONES.map((step, idx) => {
+						{HAPPY_PATH.map((step, idx) => {
 							const done = idx < currentIdx;
-							const active = idx === currentIdx;
+							const active = idx === currentIdx && !isBranch;
 							return (
 								<div key={step} className="flex items-center flex-1 last:flex-none">
 									<div className="flex flex-col items-center">
@@ -699,7 +936,7 @@ export default function DetailPengirimanPage() {
 											{MILESTONE_LABEL[step]}
 										</span>
 									</div>
-									{idx < MILESTONES.length - 1 && (
+									{idx < HAPPY_PATH.length - 1 && (
 										<div
 											className={`h-0.5 flex-1 mx-1 mb-4 ${idx < currentIdx ? "bg-green-400" : "bg-gray-200"}`}
 										/>
@@ -708,6 +945,51 @@ export default function DetailPengirimanPage() {
 							);
 						})}
 					</div>
+
+					{current === "gagal_kirim" && (
+						<div className="flex items-start gap-2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm mb-4">
+							<PackageX size={16} className="mt-0.5 flex-shrink-0" />
+							<div>
+								<p className="font-semibold">Gagal Kirim</p>
+								{latestGagal?.alasan_gagal && (
+									<p className="mt-0.5">
+										{ALASAN_GAGAL_CFG[latestGagal.alasan_gagal as AlasanGagal]?.label}
+									</p>
+								)}
+							</div>
+						</div>
+					)}
+					{current === "retur" && (
+						<div className="flex items-center gap-2 bg-gray-100 border border-gray-200 text-gray-700 px-4 py-3 rounded-xl text-sm mb-4">
+							<Undo2 size={16} className="flex-shrink-0" />
+							<p className="font-semibold">Diretur ke Pengirim</p>
+						</div>
+					)}
+
+					{current === "selesai" && (data.pod_penerima_nama || data.pod_foto_url) && (
+						<div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 mb-4">
+							<p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+								<Camera size={12} /> Bukti Serah Terima (POD)
+							</p>
+							<div className="flex items-center gap-3">
+								{data.pod_foto_url && (
+									<a href={data.pod_foto_url} target="_blank" rel="noopener noreferrer">
+										<img
+											src={data.pod_foto_url}
+											alt="Bukti POD"
+											className="h-16 w-24 object-cover rounded-lg border border-emerald-200 hover:opacity-80 transition"
+										/>
+									</a>
+								)}
+								<div>
+									<p className="text-xs text-gray-500">Diterima oleh</p>
+									<p className="text-sm font-semibold text-gray-900">
+										{data.pod_penerima_nama || "-"}
+									</p>
+								</div>
+							</div>
+						</div>
+					)}
 
 					{trackingList.length > 0 && (
 						<div className="space-y-2 mb-4">
@@ -735,6 +1017,11 @@ export default function DetailPengirimanPage() {
 												</span>
 											)}
 										</div>
+										{t.alasan_gagal && (
+											<p className="text-sm text-red-600 font-medium mt-0.5">
+												{ALASAN_GAGAL_CFG[t.alasan_gagal as AlasanGagal]?.label}
+											</p>
+										)}
 										{t.catatan && (
 											<p className="text-sm text-gray-700 mt-0.5">{t.catatan}</p>
 										)}
@@ -753,19 +1040,199 @@ export default function DetailPengirimanPage() {
 						</div>
 					)}
 
-					{canUpd && next && current !== "selesai" && (
-						<button
-							onClick={() => {
-								setMsKeterangan("");
-								setMsFotoFile(null);
-								setMsFotoPreview(null);
-								setMsError("");
-								setModalMilestone(true);
-							}}
-							className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition">
-							<ChevronRight size={15} />
-							Update ke: {MILESTONE_LABEL[next]}
-						</button>
+					{nextOptions.length > 0 && (
+						<div className="flex flex-wrap gap-2">
+							{nextOptions.map((n) => {
+								if (n === "selesai") {
+									return (
+										<button
+											key={n}
+											onClick={() => {
+												setPodNama("");
+												setPodCatatan("");
+												setPodFotoFile(null);
+												setPodFotoPreview(null);
+												setPodError("");
+												setModalSelesai(true);
+											}}
+											className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-semibold transition">
+											<CheckCircle2 size={15} />
+											Tandai Selesai (POD)
+										</button>
+									);
+								}
+								if (n === "gagal_kirim") {
+									return (
+										<button
+											key={n}
+											onClick={() => {
+												setGagalAlasan("");
+												setGagalCatatan("");
+												setGagalFotoFile(null);
+												setGagalFotoPreview(null);
+												setGagalError("");
+												setModalGagal(true);
+											}}
+											className="flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition">
+											<PackageX size={15} />
+											Tandai Gagal Kirim
+										</button>
+									);
+								}
+								if (n === "retur") {
+									return (
+										<button
+											key={n}
+											onClick={() => {
+												setReturCatatan("");
+												setReturError("");
+												setModalRetur(true);
+											}}
+											className="flex items-center gap-2 px-4 py-2.5 bg-gray-700 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold transition">
+											<Undo2 size={15} />
+											Retur ke Pengirim
+										</button>
+									);
+								}
+								return (
+									<button
+										key={n}
+										onClick={() => {
+											setMsTarget(n);
+											setMsKeterangan("");
+											setMsFotoFile(null);
+											setMsFotoPreview(null);
+											setMsError("");
+											setModalMilestone(true);
+										}}
+										className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition">
+										<ChevronRight size={15} />
+										Update ke: {MILESTONE_LABEL[n]}
+									</button>
+								);
+							})}
+						</div>
+					)}
+				</div>
+
+				{/* ── Riwayat Transit (spec 09) — log paralel, TIDAK PERNAH menyentuh milestone ── */}
+				<div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+					<h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+						<Truck size={14} className="text-indigo-500" /> Riwayat Transit
+					</h2>
+
+					{transitList.length === 0 ? (
+						<p className="text-sm text-gray-400 italic py-2 mb-3">
+							Belum ada riwayat transit
+						</p>
+					) : (
+						<div className="space-y-2 mb-4">
+							{transitList.map((t: any) => (
+								<div
+									key={t.id}
+									className="flex gap-3 bg-gray-50 rounded-xl p-3 border border-gray-100">
+									<div
+										className={`w-2 h-2 rounded-full mt-2 flex-shrink-0 ${
+											t.tipe_event === "tiba" ? "bg-emerald-400" : "bg-indigo-400"
+										}`}
+									/>
+									<div className="flex-1 min-w-0">
+										<div className="flex items-center gap-2 flex-wrap">
+											<span
+												className={`flex items-center gap-1 text-xs font-semibold px-1.5 py-0.5 rounded-full ${
+													t.tipe_event === "tiba"
+														? "bg-emerald-100 text-emerald-700"
+														: "bg-indigo-100 text-indigo-700"
+												}`}>
+												{t.tipe_event === "tiba" ? (
+													<ArrowDownToLine size={11} />
+												) : (
+													<ArrowUpFromLine size={11} />
+												)}
+												{t.tipe_event === "tiba" ? "Tiba" : "Berangkat"}
+											</span>
+											<span className="text-sm font-medium text-gray-900">
+												{t.cabang?.nama || "-"}
+												{t.cabang?.kota ? ` · ${t.cabang.kota}` : ""}
+											</span>
+											<span className="text-xs text-gray-400">
+												·{" "}
+												{new Date(t.created_at).toLocaleDateString("id-ID", {
+													day: "numeric",
+													month: "short",
+													year: "numeric",
+													hour: "2-digit",
+													minute: "2-digit",
+												})}
+											</span>
+										</div>
+										<p className="text-xs text-gray-400 mt-0.5">
+											{t.manifest?.nomor_manifest
+												? `Otomatis via manifest ${t.manifest.nomor_manifest}`
+												: "Input manual"}
+											{t.creator?.name ? ` · ${t.creator.name}` : ""}
+										</p>
+										{t.catatan && (
+											<p className="text-sm text-gray-700 mt-1">{t.catatan}</p>
+										)}
+									</div>
+								</div>
+							))}
+						</div>
+					)}
+
+					{canInputTransit && (
+						<div className="bg-gray-50 rounded-xl p-4 space-y-3">
+							<div className="grid grid-cols-2 gap-3">
+								<div>
+									<label className="block text-xs text-gray-500 mb-1">Hub/Cabang</label>
+									<select
+										value={transitCabangId}
+										onChange={(e) => setTransitCabangId(e.target.value)}
+										className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+										<option value="">— Pilih —</option>
+										{cabangList.map((c) => (
+											<option key={c.id} value={c.id}>
+												{c.nama}
+												{c.kota ? ` (${c.kota})` : ""}
+											</option>
+										))}
+									</select>
+								</div>
+								<div>
+									<label className="block text-xs text-gray-500 mb-1">Tipe Event</label>
+									<select
+										value={transitTipe}
+										onChange={(e) => setTransitTipe(e.target.value as TransitTipeEvent)}
+										className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+										<option value="tiba">Tiba</option>
+										<option value="berangkat">Berangkat</option>
+									</select>
+								</div>
+							</div>
+							<div>
+								<label className="block text-xs text-gray-500 mb-1">
+									Catatan (opsional)
+								</label>
+								<input
+									value={transitCatatan}
+									onChange={(e) => setTransitCatatan(e.target.value)}
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								/>
+							</div>
+							{transitError && (
+								<div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm">
+									{transitError}
+								</div>
+							)}
+							<button
+								onClick={addTransit}
+								disabled={transitSaving || !transitCabangId}
+								className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-4 py-2 rounded-xl text-sm font-medium">
+								<Plus size={14} />
+								{transitSaving ? "Menyimpan..." : "Tambah Event Transit"}
+							</button>
+						</div>
 					)}
 				</div>
 
@@ -935,7 +1402,7 @@ export default function DetailPengirimanPage() {
 
 			{/* ── Modal Update Milestone ── */}
 			{modalMilestone &&
-				next &&
+				msTarget &&
 				(() => (
 					<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
 						<div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
@@ -948,7 +1415,7 @@ export default function DetailPengirimanPage() {
 										{MILESTONE_LABEL[current]}{" "}
 										<ChevronRight size={12} className="inline" />{" "}
 										<span className="text-indigo-600 font-medium">
-											{MILESTONE_LABEL[next]}
+											{MILESTONE_LABEL[msTarget]}
 										</span>
 									</p>
 								</div>
@@ -1014,12 +1481,248 @@ export default function DetailPengirimanPage() {
 									) : (
 										<CheckCircle2 size={15} />
 									)}
-									{msSaving ? "Menyimpan..." : `Konfirmasi: ${MILESTONE_LABEL[next]}`}
+									{msSaving ? "Menyimpan..." : `Konfirmasi: ${MILESTONE_LABEL[msTarget]}`}
 								</button>
 							</div>
 						</div>
 					</div>
 				))()}
+
+			{/* ── Modal Gagal Kirim ── */}
+			{modalGagal && (
+				<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+						<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+							<h3 className="font-semibold text-gray-900">Tandai Gagal Kirim</h3>
+							<button
+								onClick={() => setModalGagal(false)}
+								className="p-2 hover:bg-gray-100 rounded-lg">
+								<X size={18} className="text-gray-400" />
+							</button>
+						</div>
+						<div className="p-6 space-y-4">
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Alasan Gagal *
+								</label>
+								<select
+									value={gagalAlasan}
+									onChange={(e) => setGagalAlasan(e.target.value as AlasanGagal)}
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+									<option value="">— Pilih alasan —</option>
+									{(Object.keys(ALASAN_GAGAL_CFG) as AlasanGagal[]).map((a) => (
+										<option key={a} value={a}>
+											{ALASAN_GAGAL_CFG[a].label}
+										</option>
+									))}
+								</select>
+							</div>
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Catatan (opsional)
+								</label>
+								<textarea
+									value={gagalCatatan}
+									onChange={(e) => setGagalCatatan(e.target.value)}
+									rows={2}
+									placeholder="Detail kejadian..."
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+								/>
+							</div>
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Foto (opsional)
+								</label>
+								<input
+									type="file"
+									accept="image/*"
+									onChange={(e) => {
+										const f = e.target.files?.[0] ?? null;
+										setGagalFotoFile(f);
+										setGagalFotoPreview(f ? URL.createObjectURL(f) : null);
+									}}
+									className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+								/>
+								{gagalFotoPreview && (
+									<img
+										src={gagalFotoPreview}
+										alt="Preview"
+										className="mt-2 h-24 w-36 object-cover rounded-xl border border-gray-200"
+									/>
+								)}
+							</div>
+							{gagalError && (
+								<div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-xl text-sm">
+									<AlertCircle size={14} /> {gagalError}
+								</div>
+							)}
+						</div>
+						<div className="flex gap-3 px-6 pb-6">
+							<button
+								onClick={() => setModalGagal(false)}
+								className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition">
+								Batal
+							</button>
+							<button
+								onClick={submitGagalKirim}
+								disabled={gagalSaving || !gagalAlasan}
+								className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:bg-red-300 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+								{gagalSaving ? (
+									<Loader2 size={15} className="animate-spin" />
+								) : (
+									<PackageX size={15} />
+								)}
+								{gagalSaving ? "Menyimpan..." : "Konfirmasi Gagal Kirim"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* ── Modal Tandai Selesai (POD wajib) ── */}
+			{modalSelesai && (
+				<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+						<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+							<h3 className="font-semibold text-gray-900">
+								Tandai Selesai — Bukti Serah Terima (POD)
+							</h3>
+							<button
+								onClick={() => setModalSelesai(false)}
+								className="p-2 hover:bg-gray-100 rounded-lg">
+								<X size={18} className="text-gray-400" />
+							</button>
+						</div>
+						<div className="p-6 space-y-4">
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Nama Penerima Aktual *
+								</label>
+								<input
+									value={podNama}
+									onChange={(e) => setPodNama(e.target.value)}
+									placeholder="Nama orang yang menerima barang"
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								/>
+							</div>
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Foto Bukti Serah Terima *
+								</label>
+								<input
+									type="file"
+									accept="image/*"
+									onChange={(e) => {
+										const f = e.target.files?.[0] ?? null;
+										setPodFotoFile(f);
+										setPodFotoPreview(f ? URL.createObjectURL(f) : null);
+									}}
+									className="w-full text-sm text-gray-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+								/>
+								{podFotoPreview && (
+									<img
+										src={podFotoPreview}
+										alt="Preview"
+										className="mt-2 h-24 w-36 object-cover rounded-xl border border-gray-200"
+									/>
+								)}
+							</div>
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Catatan (opsional)
+								</label>
+								<textarea
+									value={podCatatan}
+									onChange={(e) => setPodCatatan(e.target.value)}
+									rows={2}
+									placeholder="Keterangan tambahan..."
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+								/>
+							</div>
+							{podError && (
+								<div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-xl text-sm">
+									<AlertCircle size={14} /> {podError}
+								</div>
+							)}
+						</div>
+						<div className="flex gap-3 px-6 pb-6">
+							<button
+								onClick={() => setModalSelesai(false)}
+								className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition">
+								Batal
+							</button>
+							<button
+								onClick={submitSelesaiPOD}
+								disabled={podSaving || podNama.trim().length < 2 || !podFotoFile}
+								className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+								{podSaving ? (
+									<Loader2 size={15} className="animate-spin" />
+								) : (
+									<CheckCircle2 size={15} />
+								)}
+								{podSaving ? "Menyimpan..." : "Konfirmasi Selesai"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* ── Modal Retur ke Pengirim ── */}
+			{modalRetur && (
+				<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+						<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+							<h3 className="font-semibold text-gray-900">Retur ke Pengirim</h3>
+							<button
+								onClick={() => setModalRetur(false)}
+								className="p-2 hover:bg-gray-100 rounded-lg">
+								<X size={18} className="text-gray-400" />
+							</button>
+						</div>
+						<div className="p-6 space-y-4">
+							<p className="text-sm text-gray-600 bg-gray-50 rounded-xl px-3 py-2.5">
+								Kiriman ini akan ditandai <b>Retur</b> — status terminal, tidak bisa
+								diubah lagi setelah ini.
+							</p>
+							<div>
+								<label className="block text-xs font-medium text-gray-600 mb-1">
+									Catatan (opsional)
+								</label>
+								<textarea
+									value={returCatatan}
+									onChange={(e) => setReturCatatan(e.target.value)}
+									rows={2}
+									placeholder="Alasan retur..."
+									className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+								/>
+							</div>
+							{returError && (
+								<div className="flex items-center gap-2 bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-xl text-sm">
+									<AlertCircle size={14} /> {returError}
+								</div>
+							)}
+						</div>
+						<div className="flex gap-3 px-6 pb-6">
+							<button
+								onClick={() => setModalRetur(false)}
+								className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition">
+								Batal
+							</button>
+							<button
+								onClick={submitRetur}
+								disabled={returSaving}
+								className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-800 disabled:bg-gray-400 text-white rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+								{returSaving ? (
+									<Loader2 size={15} className="animate-spin" />
+								) : (
+									<Undo2 size={15} />
+								)}
+								{returSaving ? "Menyimpan..." : "Konfirmasi Retur"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* ── Modal Pelunasan ── */}
 			{modalPelunasan && (

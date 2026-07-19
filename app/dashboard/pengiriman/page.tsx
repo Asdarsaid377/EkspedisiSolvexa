@@ -12,6 +12,7 @@ import {
 	exportToExcel,
 } from "@/lib/utils";
 import { printPengirimanInvoice } from "@/lib/printPengirimanInvoice";
+import { logAktivitas } from "@/lib/aktivitas";
 import Link from "next/link";
 import {
 	Plus,
@@ -36,6 +37,8 @@ import {
 	Phone,
 	User,
 	Weight,
+	PackageX,
+	Undo2,
 } from "lucide-react";
 
 const JENIS_LAYANAN_CFG: Record<
@@ -49,6 +52,7 @@ const JENIS_LAYANAN_CFG: Record<
 
 const emptyForm = {
 	jenis_layanan: "reguler" as JenisLayanan,
+	cabang_id: "",
 	pengirim_nama: "",
 	pengirim_telepon: "",
 	pengirim_alamat: "",
@@ -68,13 +72,21 @@ const emptyForm = {
 	metode_bayar: "transfer",
 	status_bayar: "belum_bayar",
 	uang_dp: "0",
+	customer_id: "",
+	petugas_id: "",
 	petugas_nama: "",
 	petugas_telepon: "",
 	catatan: "",
 };
 
+const emptyQuickAddCustomer = {
+	nama: "",
+	telepon: "",
+	tipe: "umum" as "umum" | "korporat",
+};
+
 export default function PengirimanPage() {
-	const { isSuperAdmin, role } = useAuth();
+	const { isSuperAdmin, role, profile } = useAuth();
 	const supabase = createClient();
 	const [list, setList] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
@@ -83,13 +95,32 @@ export default function PengirimanPage() {
 		"semua",
 	);
 	const [filterMilestone, setFilterMilestone] = useState<
-		"semua" | "diproses" | "dijemput" | "dikirim" | "selesai"
+		| "semua"
+		| "diproses"
+		| "dijemput"
+		| "dikirim"
+		| "gagal_kirim"
+		| "retur"
+		| "selesai"
 	>("semua");
 	const [filterTanggal, setFilterTanggal] = useState({ dari: "", sampai: "" });
-	const [modal, setModal] = useState<"form" | "pelunasan" | null>(null);
+	const [filterCabang, setFilterCabang] = useState("semua");
+	const [cabangList, setCabangList] = useState<any[]>([]);
+	const [petugasList, setPetugasList] = useState<any[]>([]);
+	const [customerList, setCustomerList] = useState<any[]>([]);
+	const [modal, setModal] = useState<
+		"form" | "pelunasan" | "quickAddCustomer" | null
+	>(null);
 	const [form, setForm] = useState(emptyForm);
 	const [saving, setSaving] = useState(false);
 	const [selected, setSelected] = useState<any | null>(null);
+
+	// Search-dropdown customer di form pengiriman
+	const [customerSearch, setCustomerSearch] = useState("");
+	const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+	const [quickAddForm, setQuickAddForm] = useState(emptyQuickAddCustomer);
+	const [quickAddSaving, setQuickAddSaving] = useState(false);
+	const [quickAddError, setQuickAddError] = useState("");
 
 	// Pelunasan form
 	const [pelunasanForm, setPelunasanForm] = useState({
@@ -184,18 +215,90 @@ export default function PengirimanPage() {
 	}, []);
 
 	const loadAll = async () => {
-		const { data } = await supabase
-			.from("pengiriman")
-			.select("*")
-			.order("created_at", { ascending: false })
-			.limit(200);
+		const [{ data }, { data: cabang }, { data: petugas }, { data: customer }] =
+			await Promise.all([
+				supabase
+					.from("pengiriman")
+					.select("*, cabang:cabang(nama)")
+					.order("created_at", { ascending: false })
+					.limit(200),
+				supabase.from("cabang").select("id, nama").eq("aktif", true).order("nama"),
+				supabase
+					.from("profiles")
+					.select("id, name, role")
+					.in("role", ["sopir", "kurir"])
+					.order("name"),
+				supabase
+					.from("customer")
+					.select("id, nama, tipe, telepon, alamat, kota")
+					.eq("aktif", true)
+					.order("nama"),
+			]);
 		setList(data || []);
+		setCabangList(cabang || []);
+		setPetugasList(petugas || []);
+		setCustomerList(customer || []);
 		setLoading(false);
 	};
 
 	const openForm = () => {
 		setForm(emptyForm);
 		setTarifInfo(null);
+		setCustomerSearch("");
+		setCustomerDropdownOpen(false);
+		setModal("form");
+	};
+
+	const pilihCustomer = (c: any) => {
+		setForm((f) => ({
+			...f,
+			customer_id: c.id,
+			pengirim_nama: c.nama,
+			pengirim_telepon: c.telepon || "",
+			pengirim_alamat: c.alamat || "",
+			pengirim_kota: c.kota || "",
+		}));
+		setCustomerSearch(c.nama);
+		setCustomerDropdownOpen(false);
+	};
+
+	const batalkanCustomer = () => {
+		setForm((f) => ({ ...f, customer_id: "" }));
+		setCustomerSearch("");
+	};
+
+	const openQuickAddCustomer = () => {
+		setQuickAddError("");
+		setQuickAddForm({ ...emptyQuickAddCustomer, nama: customerSearch.trim() });
+		setModal("quickAddCustomer");
+	};
+
+	const saveQuickAddCustomer = async () => {
+		if (!quickAddForm.nama.trim()) return;
+		setQuickAddSaving(true);
+		setQuickAddError("");
+
+		const { data, error } = await supabase
+			.from("customer")
+			.insert({
+				nama: quickAddForm.nama.trim(),
+				telepon: quickAddForm.telepon || null,
+				tipe: quickAddForm.tipe,
+			})
+			.select()
+			.single();
+
+		if (error || !data) {
+			setQuickAddError("Gagal menyimpan: " + error?.message);
+			setQuickAddSaving(false);
+			return;
+		}
+
+		setCustomerList((list) =>
+			[...list, data].sort((a, b) => a.nama.localeCompare(b.nama)),
+		);
+		pilihCustomer(data);
+		setQuickAddSaving(false);
 		setModal("form");
 	};
 
@@ -208,6 +311,8 @@ export default function PengirimanPage() {
 
 		const { data: pg, error } = await insertPengirimanWithResi(supabase, {
 			jenis_layanan: form.jenis_layanan,
+			cabang_id: form.cabang_id || null,
+			customer_id: form.customer_id || null,
 			pengirim_nama: form.pengirim_nama,
 			pengirim_telepon: form.pengirim_telepon || null,
 			pengirim_alamat: form.pengirim_alamat || null,
@@ -228,8 +333,10 @@ export default function PengirimanPage() {
 			metode_bayar: form.metode_bayar,
 			status_bayar: form.status_bayar,
 			uang_dp: Number(form.uang_dp) || 0,
+			petugas_id: form.petugas_id || null,
 			petugas_nama: form.petugas_nama || null,
 			petugas_telepon: form.petugas_telepon || null,
+			estimasi_hari: tarifInfo?.found ? (tarifInfo.estimasi_hari ?? null) : null,
 			catatan: form.catatan || null,
 		});
 
@@ -313,9 +420,26 @@ export default function PengirimanPage() {
 		loadAll();
 	};
 
-	const hapusPengiriman = async (id: string) => {
+	const hapusPengiriman = async (p: any) => {
 		if (!confirm("Yakin hapus pengiriman ini?")) return;
-		await supabase.from("pengiriman").delete().eq("id", id);
+		const { error } = await supabase.from("pengiriman").delete().eq("id", p.id);
+		if (error) return;
+
+		await logAktivitas(supabase, {
+			aksi: "delete_pengiriman",
+			entitas: "pengiriman",
+			entitas_id: p.id,
+			ref: p.nomor_faktur,
+			detail: {
+				nomor_resi: p.nomor_resi,
+				penerima_nama: p.penerima_nama,
+				total_tagihan: p.total_tagihan,
+				status_bayar: p.status_bayar,
+				milestone: p.milestone,
+			},
+			created_by: profile?.id,
+		});
+
 		loadAll();
 	};
 
@@ -331,7 +455,17 @@ export default function PengirimanPage() {
 	const countDiproses = list.filter((p) => p.milestone === "diproses").length;
 	const countDijemput = list.filter((p) => p.milestone === "dijemput").length;
 	const countDikirim = list.filter((p) => p.milestone === "dikirim").length;
+	const countGagalKirim = list.filter((p) => p.milestone === "gagal_kirim").length;
+	const countRetur = list.filter((p) => p.milestone === "retur").length;
 	const countSelesai = list.filter((p) => p.milestone === "selesai").length;
+
+	const filteredCustomerList = customerSearch.trim()
+		? customerList.filter(
+				(c) =>
+					c.nama.toLowerCase().includes(customerSearch.trim().toLowerCase()) ||
+					(c.telepon || "").toLowerCase().includes(customerSearch.trim().toLowerCase()),
+			)
+		: customerList;
 
 	const filtered = list
 		.filter((p) =>
@@ -339,6 +473,9 @@ export default function PengirimanPage() {
 		)
 		.filter((p) =>
 			filterMilestone === "semua" ? true : p.milestone === filterMilestone,
+		)
+		.filter((p) =>
+			filterCabang === "semua" ? true : p.cabang_id === filterCabang,
 		)
 		.filter((p) => {
 			if (filterTanggal.dari && p.tanggal < filterTanggal.dari + "T00:00:00")
@@ -443,7 +580,7 @@ export default function PengirimanPage() {
 			)}
 
 			{/* Kartu Ringkasan Milestone — klik untuk filter */}
-			<div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+			<div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
 				{[
 					{
 						v: "diproses" as const,
@@ -474,6 +611,26 @@ export default function PengirimanPage() {
 						idle: "border-gray-100 hover:border-indigo-200",
 						iconColor: "text-indigo-500",
 						textColor: "text-indigo-600",
+					},
+					{
+						v: "gagal_kirim" as const,
+						label: "Gagal Kirim",
+						count: countGagalKirim,
+						icon: PackageX,
+						active: "border-red-300 bg-red-50 ring-2 ring-red-200",
+						idle: "border-gray-100 hover:border-red-200",
+						iconColor: "text-red-500",
+						textColor: "text-red-600",
+					},
+					{
+						v: "retur" as const,
+						label: "Retur",
+						count: countRetur,
+						icon: Undo2,
+						active: "border-orange-300 bg-orange-50 ring-2 ring-orange-200",
+						idle: "border-gray-100 hover:border-orange-200",
+						iconColor: "text-orange-500",
+						textColor: "text-orange-600",
 					},
 					{
 						v: "selesai" as const,
@@ -568,6 +725,19 @@ export default function PengirimanPage() {
 						<X size={13} />
 					</button>
 				)}
+				{cabangList.length > 0 && (
+					<select
+						value={filterCabang}
+						onChange={(e) => setFilterCabang(e.target.value)}
+						className="px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+						<option value="semua">Semua Cabang</option>
+						{cabangList.map((c) => (
+							<option key={c.id} value={c.id}>
+								{c.nama}
+							</option>
+						))}
+					</select>
+				)}
 			</div>
 
 			<div className="space-y-3">
@@ -621,6 +791,11 @@ export default function PengirimanPage() {
 															? "DP"
 															: "Belum Bayar"}
 												</span>
+												{p.cabang?.nama && (
+													<span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-indigo-50 text-indigo-600">
+														{p.cabang.nama}
+													</span>
+												)}
 											</div>
 
 											<div className="flex items-center gap-4 mt-2 flex-wrap text-sm text-gray-600">
@@ -714,7 +889,7 @@ export default function PengirimanPage() {
 												role === "gudang" ||
 												role === "keuangan") && (
 												<button
-													onClick={() => hapusPengiriman(p.id)}
+													onClick={() => hapusPengiriman(p)}
 													className="p-2 hover:bg-red-50 rounded-lg text-red-500 transition"
 													title="Hapus">
 													<Trash2 size={15} />
@@ -785,11 +960,114 @@ export default function PengirimanPage() {
 								)}
 							</div>
 
+							{cabangList.length > 0 && (
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">
+										Cabang (opsional)
+									</label>
+									<select
+										value={form.cabang_id}
+										onChange={(e) =>
+											setForm({ ...form, cabang_id: e.target.value })
+										}
+										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+										<option value="">— Pilih Cabang —</option>
+										{cabangList.map((c) => (
+											<option key={c.id} value={c.id}>
+												{c.nama}
+											</option>
+										))}
+									</select>
+								</div>
+							)}
+
 							{/* Pengirim */}
 							<div className="border border-gray-200 rounded-xl p-4">
 								<p className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
 									<Send size={14} className="text-indigo-500" /> Pengirim
 								</p>
+
+								<div className="relative mb-3">
+									<label className="block text-xs text-gray-500 mb-1">
+										Customer Terdaftar (opsional)
+									</label>
+									<div className="flex items-center gap-2">
+										<div className="relative flex-1">
+											<Search
+												size={14}
+												className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
+											/>
+											<input
+												value={customerSearch}
+												onChange={(e) => {
+													setCustomerSearch(e.target.value);
+													setCustomerDropdownOpen(true);
+													if (form.customer_id) {
+														setForm((f) => ({ ...f, customer_id: "" }));
+													}
+												}}
+												onFocus={() => setCustomerDropdownOpen(true)}
+												onBlur={() =>
+													setTimeout(() => setCustomerDropdownOpen(false), 150)
+												}
+												placeholder="Cari nama / telepon customer..."
+												className="w-full pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+											/>
+										</div>
+										{form.customer_id && (
+											<button
+												type="button"
+												onClick={batalkanCustomer}
+												className="p-2.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600"
+												title="Batalkan pilihan customer (walk-in)">
+												<X size={15} />
+											</button>
+										)}
+									</div>
+									{customerDropdownOpen && !form.customer_id && (
+										<div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
+											{filteredCustomerList.map((c) => (
+												<button
+													key={c.id}
+													type="button"
+													onClick={() => pilihCustomer(c)}
+													className="w-full text-left px-3 py-2 hover:bg-indigo-50 flex items-center justify-between gap-2 text-sm border-b border-gray-50 last:border-0">
+													<span className="flex items-center gap-2 min-w-0">
+														<span className="font-medium text-gray-800 truncate">
+															{c.nama}
+														</span>
+														<span
+															className={`text-xs px-1.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${
+																c.tipe === "korporat"
+																	? "bg-blue-100 text-blue-700"
+																	: "bg-gray-100 text-gray-600"
+															}`}>
+															{c.tipe === "korporat" ? "Korporat" : "Umum"}
+														</span>
+													</span>
+													<span className="text-xs text-gray-400 flex-shrink-0">
+														{c.telepon || "-"}
+													</span>
+												</button>
+											))}
+											<button
+												type="button"
+												onClick={openQuickAddCustomer}
+												className="w-full text-left px-3 py-2 hover:bg-green-50 text-sm text-green-700 font-medium flex items-center gap-1.5">
+												<Plus size={13} />
+												Customer baru
+												{customerSearch.trim() ? `: "${customerSearch.trim()}"` : ""}
+											</button>
+										</div>
+									)}
+									{form.customer_id && (
+										<p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+											<CheckCircle2 size={11} /> Customer terpilih — data pengirim di bawah
+											otomatis terisi, tetap bisa diedit
+										</p>
+									)}
+								</div>
+
 								<div className="grid grid-cols-2 gap-3">
 									<input
 										value={form.pengirim_nama}
@@ -1059,14 +1337,43 @@ export default function PengirimanPage() {
 									<label className="block text-sm font-medium text-gray-700 mb-1">
 										Kurir / Sopir
 									</label>
-									<input
-										value={form.petugas_nama}
-										onChange={(e) =>
-											setForm({ ...form, petugas_nama: e.target.value })
-										}
-										placeholder="Nama petugas"
-										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-									/>
+									<select
+										value={form.petugas_id}
+										onChange={(e) => {
+											const v = e.target.value;
+											if (!v) {
+												setForm({ ...form, petugas_id: "" });
+												return;
+											}
+											const staff = petugasList.find((p) => p.id === v);
+											setForm({
+												...form,
+												petugas_id: v,
+												petugas_nama: staff?.name || "",
+											});
+										}}
+										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+										<option value="">Lainnya / Ketik Manual</option>
+										{petugasList.map((p) => (
+											<option key={p.id} value={p.id}>
+												{p.name} ({p.role})
+											</option>
+										))}
+									</select>
+									{form.petugas_id ? (
+										<p className="text-xs text-gray-500 mt-1.5">
+											Nama petugas: <b>{form.petugas_nama}</b>
+										</p>
+									) : (
+										<input
+											value={form.petugas_nama}
+											onChange={(e) =>
+												setForm({ ...form, petugas_nama: e.target.value })
+											}
+											placeholder="Nama petugas (bukan staf)"
+											className="w-full mt-2 px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+										/>
+									)}
 								</div>
 								<div>
 									<label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1268,6 +1575,92 @@ export default function PengirimanPage() {
 								className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-green-300 text-white px-4 py-2.5 rounded-xl text-sm font-medium flex items-center justify-center gap-2">
 								<CreditCard size={15} />
 								{saving ? "Menyimpan..." : "Simpan Pelunasan"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Modal Quick-Add Customer */}
+			{modal === "quickAddCustomer" && (
+				<div className="fixed inset-0 bg-black/40 z-[70] flex items-center justify-center p-4">
+					<div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+						<div className="flex items-center justify-between p-6 border-b border-gray-100">
+							<h2 className="text-lg font-semibold">Customer Baru</h2>
+							<button
+								onClick={() => setModal("form")}
+								className="p-2 hover:bg-gray-100 rounded-lg">
+								<X size={18} />
+							</button>
+						</div>
+						<div className="p-6 space-y-4">
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Nama
+								</label>
+								<input
+									value={quickAddForm.nama}
+									onChange={(e) =>
+										setQuickAddForm({ ...quickAddForm, nama: e.target.value })
+									}
+									placeholder="Nama toko/perusahaan/perorangan"
+									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								/>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Telepon
+								</label>
+								<input
+									value={quickAddForm.telepon}
+									onChange={(e) =>
+										setQuickAddForm({ ...quickAddForm, telepon: e.target.value })
+									}
+									placeholder="Opsional"
+									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+								/>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Tipe
+								</label>
+								<div className="grid grid-cols-2 gap-3">
+									{(["umum", "korporat"] as const).map((t) => (
+										<button
+											key={t}
+											type="button"
+											onClick={() => setQuickAddForm({ ...quickAddForm, tipe: t })}
+											className={`py-2.5 rounded-xl border-2 text-sm font-medium transition ${
+												quickAddForm.tipe === t
+													? "border-indigo-500 bg-indigo-50 text-indigo-700"
+													: "border-gray-200 text-gray-600 hover:border-gray-300"
+											}`}>
+											{t === "korporat" ? "Korporat" : "Umum"}
+										</button>
+									))}
+								</div>
+							</div>
+							<p className="text-xs text-gray-400">
+								Field lain (alamat, kota, PIC, term pembayaran) bisa dilengkapi
+								belakangan di halaman Customer.
+							</p>
+							{quickAddError && (
+								<div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2.5 rounded-xl text-sm">
+									{quickAddError}
+								</div>
+							)}
+						</div>
+						<div className="flex gap-3 p-6 pt-0">
+							<button
+								onClick={() => setModal("form")}
+								className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium hover:bg-gray-50">
+								Batal
+							</button>
+							<button
+								onClick={saveQuickAddCustomer}
+								disabled={quickAddSaving || !quickAddForm.nama.trim()}
+								className="flex-1 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white px-4 py-2.5 rounded-xl text-sm font-medium">
+								{quickAddSaving ? "Menyimpan..." : "Simpan & Pilih"}
 							</button>
 						</div>
 					</div>

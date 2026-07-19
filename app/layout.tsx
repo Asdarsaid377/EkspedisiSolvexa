@@ -5,7 +5,7 @@ import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
 	title: "Bunganaik Group",
-	description: "Bunganaik Group - Toko Furniture No 1 Dimakassar",
+	description: "Expedisi Bunganaik Group - Solusi Logistik Terpercaya",
 	manifest: "/manifest.webmanifest",
 	appleWebApp: {
 		capable: true,
@@ -17,7 +17,13 @@ export const metadata: Metadata = {
 			{ url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
 			{ url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
 		],
-		apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+		apple: [
+			{
+				url: "/icons/apple-touch-icon.png",
+				sizes: "180x180",
+				type: "image/png",
+			},
+		],
 	},
 };
 

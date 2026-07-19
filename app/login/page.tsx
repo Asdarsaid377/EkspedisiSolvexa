@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { TUGAS_ROLES } from "@/lib/roles";
 import { Package, Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
@@ -19,16 +20,25 @@ export default function LoginPage() {
 		setLoading(true);
 		setError("");
 
-		const { error } = await supabase.auth.signInWithPassword({
+		const { data, error } = await supabase.auth.signInWithPassword({
 			email,
 			password,
 		});
-		if (error) {
+		if (error || !data.user) {
 			setError("Email atau password salah");
 			setLoading(false);
-		} else {
-			router.push("/dashboard");
+			return;
 		}
+
+		// Redirect berbasis role (spec 07 KT #3) — sopir/kurir langsung ke
+		// /tugas (halaman mobile lapangan), role lain tetap ke /dashboard.
+		const { data: profileData } = await supabase
+			.from("profiles")
+			.select("role")
+			.eq("id", data.user.id)
+			.single();
+
+		router.push(TUGAS_ROLES.includes(profileData?.role ?? "") ? "/tugas" : "/dashboard");
 	};
 
 	return (

@@ -13,6 +13,7 @@
 		"@opentelemetry/api": "^1.9.1",
 		"@supabase/ssr": "^0.4.1",
 		"@supabase/supabase-js": "^2.108.2",
+		"@zxing/browser": "^0.2.1",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"date-fns": "^3.6.0",

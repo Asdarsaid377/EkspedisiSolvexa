@@ -1,13 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// Lazy singleton — dibuat saat REQUEST pertama, bukan saat modul di-import.
+// SUPABASE_SERVICE_ROLE_KEY dkk dengan begitu murni runtime secret, tidak
+// perlu tersedia saat build (Next.js "collecting page data" mengeksekusi
+// modul route ini saat build; instansiasi di top-level akan throw kalau
+// env var belum ada saat itu).
+let _anthropic: Anthropic | null = null;
+function getAnthropic(): Anthropic {
+	if (!_anthropic) {
+		_anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+	}
+	return _anthropic;
+}
 
-const supabase = createClient(
-	process.env.NEXT_PUBLIC_SUPABASE_URL!,
-	process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+	if (!_supabase) {
+		_supabase = createClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.SUPABASE_SERVICE_ROLE_KEY!,
+		);
+	}
+	return _supabase;
+}
 
 // ============ KONFIGURASI ============
 const MAX_PESAN_PER_JAM = 20; // rate limit per sesi
@@ -138,7 +155,7 @@ async function cekStokProduk(query: string): Promise<string> {
 	const q = normalisasi(query);
 	if (!q) return "Kata kunci pencarian kosong.";
 
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("produk")
 		.select("nama, stok, harga_katalog, kategori")
 		.eq("aktif", true)
@@ -183,7 +200,7 @@ async function cekResi(nomor: string): Promise<string> {
 	if (!/^BNG-[A-Z0-9]{8}$/.test(resi)) {
 		return "Format nomor resi tidak valid. Minta pelanggan cek kembali nomornya (format BNG-XXXXXXXX).";
 	}
-	const { data, error } = await supabase
+	const { data, error } = await getSupabase()
 		.from("penjualan")
 		.select("nomor_resi, milestone")
 		.eq("nomor_resi", resi)
@@ -202,7 +219,7 @@ async function cekResi(nomor: string): Promise<string> {
 type HistoryMsg = { role: "user" | "assistant"; content: string };
 
 async function getOrCreateSession(sessionKey: string): Promise<string> {
-	const { data: existing } = await supabase
+	const { data: existing } = await getSupabase()
 		.from("chat_ai_sessions")
 		.select("id")
 		.eq("session_key", sessionKey)
@@ -210,7 +227,7 @@ async function getOrCreateSession(sessionKey: string): Promise<string> {
 
 	if (existing) return existing.id;
 
-	const { data: created, error } = await supabase
+	const { data: created, error } = await getSupabase()
 		.from("chat_ai_sessions")
 		.insert({ session_key: sessionKey })
 		.select("id")
@@ -223,7 +240,7 @@ async function getOrCreateSession(sessionKey: string): Promise<string> {
 
 async function cekRateLimit(sessionId: string): Promise<boolean> {
 	const sejamLalu = new Date(Date.now() - 3600_000).toISOString();
-	const { count } = await supabase
+	const { count } = await getSupabase()
 		.from("chat_ai_messages")
 		.select("id", { count: "exact", head: true })
 		.eq("session_id", sessionId)
@@ -268,7 +285,7 @@ export async function POST(req: NextRequest) {
 			});
 		}
 
-		const { data: history } = await supabase
+		const { data: history } = await getSupabase()
 			.from("chat_ai_messages")
 			.select("role, content")
 			.eq("session_id", sessionId)
@@ -277,7 +294,7 @@ export async function POST(req: NextRequest) {
 
 		const riwayat = ((history as HistoryMsg[] | null) ?? []).reverse();
 
-		await supabase.from("chat_ai_messages").insert({
+		await getSupabase().from("chat_ai_messages").insert({
 			session_id: sessionId,
 			role: "user",
 			content: message,
@@ -293,7 +310,7 @@ export async function POST(req: NextRequest) {
 
 		let reply = "";
 		for (let i = 0; i < MAX_TOOL_LOOP; i++) {
-			const response = await anthropic.messages.create({
+			const response = await getAnthropic().messages.create({
 				model: "claude-haiku-4-5",
 				max_tokens: 1024,
 				// prompt caching: system prompt + tools di-cache, hemat ~90% di request berikutnya
@@ -314,7 +331,7 @@ export async function POST(req: NextRequest) {
 				break;
 			}
 			// setelah dapat reply final
-			await supabase.from("chat_ai_usage").insert({
+			await getSupabase().from("chat_ai_usage").insert({
 				session_id: sessionId,
 				input_tokens: response.usage.input_tokens,
 				output_tokens: response.usage.output_tokens,
@@ -349,7 +366,7 @@ export async function POST(req: NextRequest) {
 				"Maaf, saya belum bisa menjawab pertanyaan ini sekarang. Silakan lanjut chat dengan tim CS kami via WhatsApp di https://wa.me/6289630085814 ya.";
 		}
 
-		await supabase.from("chat_ai_messages").insert({
+		await getSupabase().from("chat_ai_messages").insert({
 			session_id: sessionId,
 			role: "assistant",
 			content: reply,

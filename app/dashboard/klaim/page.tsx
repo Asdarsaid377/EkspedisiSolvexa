@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { KlaimTipe, KlaimStatus } from "@/lib/types";
 import { formatRupiah, formatDateOnly } from "@/lib/utils";
+import { logAktivitas } from "@/lib/aktivitas";
 import {
 	Plus,
 	X,
@@ -185,6 +186,21 @@ export default function KlaimPage() {
 			approved_at: new Date().toISOString(),
 		};
 		await supabase.from("klaim").update(payload).eq("id", selected.id);
+
+		await logAktivitas(supabase, {
+			aksi: status === "disetujui" ? "approve_klaim" : "tolak_klaim",
+			entitas: "klaim",
+			entitas_id: selected.id,
+			ref: selected.nomor_klaim,
+			detail: {
+				tipe: selected.tipe,
+				nilai_klaim: selected.nilai_klaim,
+				nilai_disetujui: payload.nilai_disetujui,
+				catatan_approval: payload.catatan_approval,
+			},
+			created_by: profile?.id,
+		});
+
 		setList((rows) =>
 			rows.map((r) => (r.id === selected.id ? { ...r, ...payload } : r)),
 		);
@@ -194,9 +210,15 @@ export default function KlaimPage() {
 	};
 
 	const tandaiSelesai = async (k: any) => {
-		await supabase.from("klaim").update({ status: "selesai" }).eq("id", k.id);
+		const selesaiAt = new Date().toISOString();
+		await supabase
+			.from("klaim")
+			.update({ status: "selesai", selesai_at: selesaiAt })
+			.eq("id", k.id);
 		setList((rows) =>
-			rows.map((r) => (r.id === k.id ? { ...r, status: "selesai" } : r)),
+			rows.map((r) =>
+				r.id === k.id ? { ...r, status: "selesai", selesai_at: selesaiAt } : r,
+			),
 		);
 	};
 

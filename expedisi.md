@@ -293,6 +293,29 @@ dengan `armada`/`manifest`). Detail keputusan desain (kenapa `ON DELETE SET
 NULL` + snapshot, kenapa estimasi COD berbasis pencocokan nama bukan FK) ada
 di §7 poin 4 di bawah.
 
+### `cabang` — SUDAH DIIMPLEMENTASI (Fase 5, 18 Jul 2026)
+
+Migration: `supabase/migrations/20260718160000_cabang_fase5.sql`.
+
+```
+cabang
+  id, nama (UNIQUE), kota, alamat, telepon, catatan
+  aktif BOOLEAN DEFAULT true, created_at, updated_at
+
+-- Kolom label/filter nullable di tabel existing:
+pengiriman.cabang_id, manifest.cabang_id, armada.cabang_id  -- semua FK -> cabang
+```
+
+Sesuai jawaban §8: jumlah cabang **dinamis** (bukan hardcode 2), CRUD
+`/dashboard/cabang` **superadmin only**. **Cabang cuma label/filter, bukan
+isolasi data** — tidak ada RLS atau app-level partisi akses berdasarkan
+cabang staf, semua staf tetap bisa lihat/kelola semua cabang seperti biasa.
+Sengaja **tidak ada `profiles.cabang_id`** — tidak ada fitur konkret yang
+butuh itu sekarang (tidak ada isolasi akses), dan `/dashboard/pengguna`
+belum punya fitur edit user sama sekali (cuma create), jadi menambah field
+di sana berarti membangun fitur yang tidak diminta. RLS `cabang`:
+`auth_all_cabang` (staff-only, semua staf boleh `SELECT` untuk dropdown).
+
 Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
 `produk`, `produk_foto`, `resellers`, `bahan_baku`, `bom`, `batch_produksi`,
 `purchase_orders`, `purchase_order_items`, dan seluruh tabel HPP.
@@ -388,13 +411,373 @@ Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
      hapus superadmin only) dan `/dashboard/cod` (catat setoran — input oleh
      superadmin/keuangan/kurir/sopir, edit/hapus superadmin/keuangan only)
    - Sidebar: group collapsible baru "COD & Klaim" (Setoran COD + Klaim)
-5. **Fase 5 — Cabang/Agen**: 2 hub tetap bisa jadi cabang dinamis dan bisa bertambah,
-   **operasional penuh** — tiap hub punya staf, armada, dan pengiriman
-   sendiri, jadi perlu kolom `cabang_id` di `pengiriman`/`manifest`/`armada`/
-   `profiles` (bukan sekadar field referensi ringan).
-6. **Fase 6 — Self-service booking + notifikasi WA otomatis**.
-7. **Pembersihan**: hapus modul & tabel furniture yang sudah dipastikan
-   tidak dipakai (§3.2).
+5. **Fase 5 — Cabang/Agen — ✅ SELESAI (18 Jul 2026)**: jumlah cabang
+   **dinamis** (CRUD superadmin only, mulai dari 1 dan bisa bertambah
+   kapan saja — bukan hardcode). Tabel `cabang` baru + kolom `cabang_id`
+   nullable di `pengiriman`/`manifest`/`armada`.
+   - **Cabang cuma label/filter, BUKAN isolasi data** — semua staf
+     (non-superadmin sekalipun) tetap bisa lihat & kelola pengiriman/
+     manifest/armada di semua cabang seperti sekarang. `cabang_id` dipakai
+     untuk filter list `/dashboard/pengiriman` & penugasan armada saja,
+     tidak ada RLS/app-level partisi akses berdasarkan cabang staf. Ini
+     sengaja dipilih supaya scope tetap ringan (tim masih kecil, saling
+     koordinasi lintas cabang).
+   - **Tidak jadi ada `profiles.cabang_id`** (beda dari rencana awal) —
+     tidak ada fitur isolasi akses yang butuh itu, dan `/dashboard/pengguna`
+     belum punya fitur edit user sama sekali sehingga menambah field di
+     sana berarti membangun fitur baru yang tidak diminta
+   - Halaman baru `/dashboard/cabang` (superadmin only, pola tabel sama
+     seperti Tarif Zona: nama/kota/telepon/toggle-aktif + modal form)
+   - Dropdown "Cabang (opsional)" ditambahkan ke form
+     `/dashboard/pengiriman`, `/dashboard/armada`, dan form-create +
+     detail-edit `/dashboard/manifest` — di manifest, `cabang_id` auto-fill
+     dari armada terpilih (pola sama seperti auto-fill `sopir_id`), tetap
+     bisa di-override manual
+   - Filter "Semua Cabang" baru di list `/dashboard/pengiriman`
+   - Sidebar: item baru "Cabang" di section Admin (bareng Pengguna +
+     Tarif Zona)
+   - Hapus cabang yang masih dipakai pengiriman/armada/manifest sengaja
+     gagal (FK constraint default Postgres, tidak di-`ON DELETE CASCADE`
+     atau `SET NULL`) — pesan error mengarahkan nonaktifkan saja
+6. **Gagal Kirim, Retur & POD — ✅ SELESAI (18 Jul 2026)**: spec terpisah
+   `docs/spec/01-gagal-kirim-pod.md` (sudah diarsipkan). Menambah 2
+   milestone baru (`gagal_kirim`, `retur`) dan mewajibkan bukti serah
+   terima (POD) saat kiriman ditandai `selesai`.
+   - Peta transisi jadi bercabang (bukan linear lagi):
+     `dikirim → selesai | gagal_kirim`, `gagal_kirim → dikirim (kirim
+     ulang) | retur`, `retur` & `selesai` sama-sama terminal
+   - Kolom baru: `pengiriman.jumlah_gagal` (counter, +1 tiap transisi ke
+     `gagal_kirim`, **tidak** naik lagi saat retry — baik manual maupun
+     lewat manifest), `pengiriman.pod_penerima_nama` +
+     `pengiriman.pod_foto_url` (wajib diisi UI saat `selesai`, **di-enforce
+     app-level, bukan DB**), `pengiriman_tracking.alasan_gagal` (5 pilihan
+     terstruktur, CHECK constraint di DB)
+   - `/dashboard/pengiriman/[id]`: 3 modal baru (Gagal Kirim, Selesai+POD,
+     Retur), badge `jumlah_gagal`, blok POD setelah selesai
+   - `/dashboard/pengiriman` (list): 2 kartu ringkasan baru (Gagal Kirim,
+     Retur), keduanya klik-untuk-filter
+   - `/dashboard/manifest/[id]`: pencarian & aksi "Berangkat" sekarang
+     menyertakan kiriman `gagal_kirim` (kirim ulang lewat manifest); aksi
+     "Tandai Selesai" **berhenti bulk-update milestone kiriman** — cuma
+     menutup `manifest.status`, karena `selesai` sekarang wajib POD
+     per-kiriman (mustahil dikumpulkan bulk). **Breaking change alur kerja
+     sopir/gudang** — kiriman harus di-POD satu-per-satu dari halaman detail
+   - `/resi/[nomor]`: banner kuning "Pengiriman Gagal" (+ alasan label
+     ramah) untuk `gagal_kirim`; banner abu terminal "Dikembalikan ke
+     Pengirim" untuk `retur`
+   - Retur **tidak** otomatis membuat `klaim` atau mengubah `status_bayar`
+     — penyesuaian tagihan (kalau ada) tetap manual via rollback pembayaran
+7. **Petugas FK, Dashboard & Laporan Operasional — ✅ SELESAI (18 Jul 2026)**:
+   spec terpisah `docs/spec/02-petugas-id-dashboard.md` (sudah diarsipkan).
+   Menutup 3 utang: `petugas_nama` TEXT bebas (estimasi COD tidak presisi),
+   dashboard utama masih baca `penjualan` beku, dan `tarif_zona.estimasi_hari`
+   tidak pernah dipakai (tidak ada laporan ketepatan waktu).
+   - Kolom baru `pengiriman.petugas_id` (FK `profiles`, nullable — role
+     `sopir`/`kurir` DEFAULT, tetap boleh `NULL` utk petugas non-staf/harian)
+     dan `pengiriman.estimasi_hari` (snapshot dari `tarif_zona` saat kiriman
+     dibuat, NULL utk kargo/rute tanpa tarif). Backfill sekali dari
+     pencocokan nama (case-insensitive) — baris yang tidak ke-match
+     dibiarkan `NULL`, tidak diblokir
+   - `petugas_nama`/`petugas_telepon` **tetap ada** sebagai snapshot display
+     (print resi/invoice) — bukan dihapus, cuma tidak lagi jadi satu-satunya
+     sumber matching
+   - Form `/dashboard/pengiriman`: field teks bebas diganti dropdown staf +
+     opsi "Lainnya / Ketik Manual" (fallback, `petugas_id` tetap `NULL`)
+   - **Definisi terlambat** baru (`lib/pengirimanConstants.ts`): batas =
+     tanggal + estimasi_hari (hari kalender); selesai terlambat kalau waktu
+     tracking milestone `selesai` (paling awal) lewat batas; aktif terlambat
+     kalau hari ini sudah lewat batas dan belum selesai/retur; `estimasi_hari`
+     NULL atau milestone `retur` dikecualikan total (bukan dihitung on-time)
+   - `/dashboard/cod`: matching **diutamakan** `petugas_id`, fallback nama
+     HANYA utk baris `petugas_id IS NULL` — disclaimer "estimasi" di UI
+     otomatis hilang begitu tidak ada lagi baris fallback
+   - **Dashboard utama (`/dashboard`) full rewrite** ke `pengiriman` (dulu
+     baca `penjualan`, beku sejak Fase 1) — filter bulan/tahun + cabang baru,
+     5 stat card (kiriman, revenue ongkir **termasuk retur** karena ongkir
+     retur tetap ditagih penuh, belum lunas, gagal kirim aktif, retur),
+     chart batang stacked per jenis layanan, 5 pengiriman terbaru. Widget
+     nominal (revenue, rincian belum lunas) **superadmin/keuangan only**;
+     count/status tetap semua role. Widget arsip furniture lama dihapus total
+   - `/dashboard/laporan/sopir` **rewrite in-place** jadi **Laporan Petugas**
+     (role akses berubah jadi `superadmin`/`keuangan`/`cs`, bukan `gudang`
+     lagi) — podium & tabel peringkat dipertahankan polanya, kolom baru
+     selesai/gagal kirim (SUM `jumlah_gagal`)/retur/on-time rate. Baris
+     `petugas_id IS NULL` masuk bucket "Tanpa Petugas Terdaftar" (baris
+     terpisah di akhir tabel, di luar podium/ranking)
+   - Halaman baru `/dashboard/laporan/keterlambatan` (role sama: superadmin/
+     keuangan/cs) — stat card terlambat aktif/terlambat selesai/on-time rate
+     keseluruhan, tabel kiriman terlambat (resi, kota, petugas, umur vs
+     estimasi, selisih hari) default sort selisih terbesar, filter periode +
+     cabang + jenis layanan
+   - Sidebar: label "Laporan Sopir" → "Laporan Petugas", item baru
+     "Keterlambatan" di grup Laporan
+8. **Master Customer, Piutang Aging & Tagihan Korporat — ✅ SELESAI (18 Jul
+   2026)**: spec terpisah `docs/spec/03-customer-korporat.md` (sudah
+   diarsipkan). Menutup utang `pengirim_nama` TEXT bebas (pengirim
+   berulang tidak bisa direkap/ditagih bulanan) + tidak ada laporan
+   piutang aging sebelumnya.
+   - Tabel `customer` baru (tipe `umum`/`korporat`, `term_hari` tempo
+     pembayaran default 0, TIDAK ada UNIQUE pada nama — dedup dijaga di
+     UI) + kolom `pengiriman.customer_id` (nullable, FK, default NO
+     ACTION). **TIDAK ada backfill otomatis** dari data pengiriman lama
+     (keputusan sengaja — pencocokan nama+telepon otomatis rawan
+     duplikat kotor)
+   - Kolom `pengirim_*` di `pengiriman` **tetap ada** sebagai snapshot per
+     kiriman — bahkan kiriman dengan `customer_id` terisi tetap simpan
+     snapshot sendiri, master `customer` tidak pernah ikut berubah
+   - Form `/dashboard/pengiriman`: search-dropdown customer (cari
+     nama/telepon) + quick-add modal (nama+telepon+tipe saja) + auto-fill
+     snapshot pengirim yang tetap editable setelah dipilih
+   - **Aging piutang**: jatuh tempo = `tanggal + term_hari` (term diambil
+     dari master SAAT QUERY, bukan snapshot — ubah term_hari langsung
+     berlaku ke tagihan berjalan). 4 bucket: belum jatuh tempo, 1-7 hari,
+     8-30 hari, >30 hari. Kiriman `retur` tetap masuk piutang (konsisten
+     keputusan spec 01 — ongkir retur tetap ditagih)
+   - Halaman baru `/dashboard/customer` (CRUD + panel ringkas: total
+     kiriman + total piutang + kiriman terakhir) dan `/dashboard/piutang`
+     (4 stat card aging bucket, tabel per customer sort sisa terbesar +
+     baris "Walk-in/Tanpa Customer", drill-down)
+   - **Pelunasan Massal** di drill-down piutang: checkbox multi-kiriman →
+     insert `pengiriman_pembayaran` sebesar sisa PENUH per kiriman (bukan
+     alokasi sebagian), reuse mekanisme pelunasan satuan yang sudah ada
+     dipanggil berulang — **tidak ada entitas invoice formal baru**.
+     Rollback pembayaran existing tetap berfungsi identik untuk baris ini
+   - `lib/printTagihanCustomer.ts` — print helper baru format A4 (beda
+     dari `printPengirimanInvoice.ts` yang half-page dot-matrix), tombol
+     "Cetak Rekap Tagihan" di drill-down
+   - Sidebar: "Customer" nav flat dekat "Pengiriman"; "Piutang" ditaruh di
+     grup "Laporan" (bukan "Keuangan" seperti rencana awal spec — grup
+     Keuangan sudah di-hide dari sidebar sebelum step ini dikerjakan)
+9. **Biaya Trip Manifest & Laporan Laba per Trip — ✅ SELESAI (18 Jul
+   2026)**: spec terpisah `docs/spec/04-biaya-trip.md` (sudah diarsipkan).
+   Menutup utang: manifest mengumpulkan revenue (ongkir kiriman) tapi
+   tidak ada tempat mencatat biaya trip (uang jalan, BBM, tol, kuli,
+   parkir), jadi profitabilitas per rute/keberangkatan tidak bisa dihitung.
+   - Tabel `manifest_biaya` baru (kategori uang_jalan/bbm/tol/kuli/parkir/
+     lainnya, `jumlah > 0`). **FK `manifest_id` sengaja `NO ACTION` bukan
+     CASCADE** — biaya trip adalah catatan finansial, hapus manifest yang
+     masih ada biayanya akan gagal FK (pola sama seperti `cabang` yang
+     masih dipakai)
+   - **Tidak ada kolom baru** di `manifest`/`manifest_item`/`pengiriman` —
+     Revenue (SUM `ongkir`, **termasuk** kiriman `gagal_kirim`/`retur`,
+     konsisten spec 01) dan Laba (Revenue − Total Biaya) **selalu
+     dihitung saat query**, bukan snapshot
+   - Revenue trip sengaja **cuma `ongkir`, bukan `total_tagihan`** —
+     `biaya_asuransi` dikeluarkan supaya margin trip tidak terlihat lebih
+     gemuk dari kenyataan (asuransi punya liabilitas klaim di baliknya)
+   - **Kebijakan anti-dobel dengan modul Pengeluaran keuangan**: biaya
+     trip HANYA dicatat di `manifest_biaya` — TIDAK direkap ulang manual
+     ke Pengeluaran, supaya tidak ada angka keuangan ganda
+   - Section "Biaya Trip" baru di `/dashboard/manifest/[id]` (input:
+     `superadmin`/`gudang`/`sopir`/`kurir`/`keuangan`; edit/hapus koreksi:
+     `superadmin`/`keuangan` only — sopir yang input sendiri TIDAK bisa
+     edit/hapus, keputusan sengaja biar sederhana) + panel Revenue/Total
+     Biaya/Laba (role-gated `superadmin`/`keuangan`, role lain cuma lihat
+     daftar & Total Biaya polos)
+   - Halaman baru `/dashboard/laporan/laba-trip` (role `superadmin`/
+     `keuangan`) — stat card (total trip/revenue/biaya/laba) + tabel per
+     manifest sort laba terkecil (trip rugi muncul duluan) + expand inline
+     breakdown biaya per kategori
+   - Sidebar: "Laba per Trip" di grup Laporan
+10. **Hardening RLS Tabel Finansial & Audit Trail — ✅ SELESAI (18 Jul
+    2026)**: spec terpisah `docs/spec/05-hardening-rls.md` (sudah
+    diarsipkan). Bukan fitur baru — mengencangkan RLS tabel finansial yang
+    sebelumnya cuma digating `auth.uid() IS NOT NULL` (role gate cuma di
+    React, staf mana pun secara teknis bisa hit REST API langsung untuk
+    approve klaimnya sendiri, edit tarif, hapus setoran COD, dst).
+    - Function baru `user_has_role(roles TEXT[])` (SECURITY DEFINER) —
+      helper dipakai semua policy RLS baru
+    - Tabel baru `aktivitas_log` (append-only, TANPA policy UPDATE/DELETE
+      sama sekali — immutable kecuali `service_role`) + `logAktivitas()`
+      di `lib/aktivitas.ts`, disisipkan ke 10 titik aksi sensitif existing
+      (delete pengiriman, rollback pembayaran, approve/tolak klaim, hapus
+      setoran COD, edit/hapus tarif, edit/hapus biaya trip)
+    - RLS dipersempit per-operasi (SELECT tetap terbuka semua staf,
+      TIDAK ada perubahan baca) untuk: `tarif_zona`, `cabang`,
+      `pengiriman_pembayaran`, DELETE `pengiriman`, `klaim`,
+      `cod_setoran`, `manifest_biaya` — migration terpisah per kelompok
+      tabel (bukan satu file besar) supaya bisa direvert sebagian
+    - **Breaking change**: DELETE `pengiriman` turun dari 5 role
+      (`superadmin|kasir|kurir|gudang|keuangan`) jadi cuma 2
+      (`superadmin|keuangan`) — tombol Delete di frontend **sengaja
+      tidak diubah** (tetap terlihat utk role lama), DB yang menolak;
+      halaman detail menampilkan pesan error, halaman list saat ini diam
+    - Halaman baru `/dashboard/aktivitas` (`superadmin`/`keuangan`) — log
+      read-only, filter tanggal/aksi/staf, expand detail JSON. Butuh
+      function tambahan `get_staf_aktivitas()` (SECURITY DEFINER, expose
+      HANYA `{id, name}`) karena RLS `profiles` yang sudah ada sebelum
+      spec ini (tidak disentuh) cuma izinkan baca profil sendiri atau
+      semua profil kalau `superadmin` — `keuangan` butuh jalur terpisah
+      untuk resolve nama staf lain di log
+    - **Tidak disentuh** (di luar scope, bisa menyusul sesi terpisah):
+      RLS `armada`/`manifest`/`manifest_item`/`customer`/
+      `pengiriman_tracking`, dan RLS `profiles` itu sendiri
+    - Lihat CLAUDE.md §RLS untuk matriks lengkap per tabel + jebakan
+      permissive-policy (policy Postgres di-OR, DROP `auth_all_*` lama
+      WAJIB sebelum CREATE policy sempit baru — kalau tidak, TIDAK ADA
+      EFEK sama sekali)
+11. **Perombakan Pengeluaran & Laporan Keuangan Expedisi — ✅ SELESAI (18
+    Jul 2026)**: spec terpisah `docs/spec/06-keuangan-expedisi.md` (sudah
+    diarsipkan). Modul Pengeluaran & Laporan Keuangan sebelumnya masih
+    basis furniture (kategori warisan lama, laporan baca `penjualan` yang
+    beku sejak Fase 1) — dirombak jadi basis expedisi, **cash basis**,
+    **tanpa pencatatan ganda**.
+    - Tabel `pengeluaran` **REUSE** (bukan tabel baru, 90 baris data
+      pra-pivot tetap ada sebagai arsip dgn kategori lama) — kolom baru
+      `armada_id` (FK, wajib app-level utk kategori maintenance/pajak
+      armada), `cabang_id` (opsional), `foto_bukti` (opsional). 8 kategori
+      baru divalidasi di aplikasi saja, bukan CHECK DB (biar data arsip
+      tidak bikin constraint gagal)
+    - RLS `pengeluaran` di-harden pola spec 05: `user_has_role()`, policy
+      lama `authenticated_access` (FOR ALL, jebakan permissive) di-DROP
+      dulu → SELECT semua staf, INSERT/UPDATE/DELETE superadmin+keuangan
+    - `klaim` dapat kolom `selesai_at` (diisi bareng `status='selesai'`)
+      — basis cash-basis beban klaim (masuk beban di periode SELESAI,
+      bukan periode kejadian). Backfill baris lama dari `updated_at`
+      (aproksimasi sadar). **Tidak ada perubahan lain ke `klaim`/
+      `manifest_biaya`** — keduanya tetap BACA SAJA di Laporan Keuangan
+    - **Peta sumber angka**: Pemasukan = `pengiriman_pembayaran` (SUM per
+      `created_at`, BUKAN `total_tagihan` pengiriman — DP & pelunasan di
+      bulan berbeda = 2 pemasukan terpisah). Beban = Pengeluaran +
+      `manifest_biaya` (baca saja) + klaim selesai (baca saja,
+      `nilai_disetujui`) — 3 kelompok, TIDAK PERNAH dilebur atau disalin
+      ulang ke `pengeluaran`
+    - **Kebijakan Maintenance Armada final** (dari diskusi Fase 9→11):
+      SEMUA maintenance armada, termasuk yang terjadi di tengah trip
+      (ban pecah dsb), masuk `pengeluaran` dengan `armada_id` — BUKAN
+      `manifest_biaya`, supaya tidak merusak margin trip yang manfaatnya
+      lintas puluhan trip
+    - `/dashboard/keuangan/pengeluaran` & `/dashboard/keuangan/laporan`
+      **rewrite in-place total** — versi furniture lama (omset/HPP,
+      potongan marketing & sedekah otomatis per unit, kondisi
+      stok+piutang furniture) **dihapus**, bukan diarsipkan terpisah
+      (satu laporan hidup lebih baik dari dua yang membingungkan; data
+      lama tetap bisa dilihat dari halaman Penjualan arsip)
+    - Laporan baru: stat card Pemasukan/Beban/Neto, breakdown pemasukan
+      per metode, 3 kelompok beban collapsible (Pengeluaran bisa
+      dikelola langsung; Biaya Trip & Klaim **read-only** dgn link
+      "kelola di Manifest/Klaim"), grafik tren 12 bulan (trailing dari
+      bulan filter), tabel Biaya per Armada (basis `pengeluaran.
+      armada_id`, beda dari Laporan Laba per Trip yang basis
+      `manifest_biaya`)
+    - Klaim sengaja **tidak difilter cabang** di Laporan Keuangan (tidak
+      ada kolom `cabang_id`, di luar scope nambah kolom ke `klaim`)
+    - **2 bug lama diperbaiki sekalian saat rewrite**: kontradiksi role
+      gate di `laporan/page.tsx` (guard luar izinkan keuangan, tapi ada
+      early-return kedua yang efektif superadmin-only) dan pelanggaran
+      Rules of Hooks di `pengeluaran/page.tsx` (early-return sempat ada
+      sebelum deklarasi hook lain)
+12. **Tugas Saya — Halaman Mobile Kurir/Sopir — ✅ SELESAI (19 Jul 2026)**:
+    spec terpisah `docs/spec/archive/07-tugas-saya-mobile.md` (sudah
+    diarsipkan). **Tidak ada tabel/kolom baru** — murni UI mobile-first di
+    atas skema `pengiriman`/`pengiriman_tracking` yang sudah ada, plus satu
+    index (`idx_pengiriman_petugas_milestone` pada `petugas_id, milestone`).
+    - Logika Selesai (POD)/Gagal Kirim **diekstrak** ke `lib/pengirimanAksi.ts`
+      (`submitSelesaiPOD`, `submitGagalKirim`) — dipakai BERSAMA oleh
+      `/tugas` (baru) dan `/dashboard/pengiriman/[id]` (existing, spec 01),
+      bukan diduplikasi. Validasi wajib (alasan gagal, nama+foto POD) sama
+      persis di kedua tempat.
+    - Halaman baru `/tugas` (route terpisah, layout sendiri
+      `app/tugas/layout.tsx` — TANPA Sidebar), khusus role `sopir`/`kurir`.
+      Daftar tugas = `pengiriman` WHERE `petugas_id = auth.uid()` AND
+      `milestone IN ('dijemput','dikirim','gagal_kirim')`, urut
+      `gagal_kirim` → `dikirim` → `dijemput` (bukan tanggal). Tab "Selesai
+      Hari Ini" (baca `pengiriman_tracking`, bukan `pengiriman.milestone`,
+      supaya benar-benar terbatas ke hari ini). Tap kartu → detail ringkas
+      (alamat lengkap + tombol telepon `tel:`/WhatsApp `waLink()`).
+    - Kamera langsung aktif saat "Selesai" (`capture="environment"`, pola
+      sama absensi wajah) — bukan pilih galeri sebagai default.
+    - **Tanpa dukungan offline** (keputusan sadar, bukan gap) — kegagalan
+      network saat submit menampilkan error jelas + form tetap terisi utk
+      coba lagi, tidak silent fail.
+    - **Redirect pasca-login berbasis role** (bukan deteksi viewport,
+      lebih sederhana & konsisten) — `sopir`/`kurir` langsung ke `/tugas`
+      setelah login, role lain tetap ke `/dashboard`. Konstanta
+      `TUGAS_ROLES` di `lib/roles.ts` jadi satu sumber kebenaran, dipakai
+      baik oleh guard route maupun redirect login. `middleware.ts` juga
+      didaftarkan proteksi utk `/tugas` (pola sama seperti `/dashboard`).
+    - **Keterbatasan yang diketahui, bukan bug**: kiriman dengan
+      `petugas_id IS NULL` (opsional "Lainnya" di form pengiriman, spec 02)
+      tidak muncul di `/tugas` siapa pun — tetap harus dikelola dari
+      `/dashboard/pengiriman` biasa.
+13. **Scan QR Resi — Muat Manifest & Checklist — ✅ SELESAI (19 Jul
+    2026)**: spec terpisah `docs/spec/archive/08-scan-qr-manifest.md`
+    (sudah diarsipkan). **Tidak ada perubahan skema** selain satu index
+    (`idx_pengiriman_petugas_milestone`, dipakai juga spec 07). **Format
+    QR di `printPengirimanResi` TIDAK diubah** — tetap `nomor_resi` polos,
+    scan cuma mengisi ulang alur pencarian & tambah-kiriman yang sudah
+    ada dari Fase 3.
+    - Library `@zxing/browser` (kamera belakang HP, mode continuous scan
+      — kamera tetap aktif setelah tiap scan, bukan modal blocking).
+    - Logika tambah-kiriman **diekstrak** ke `lib/manifestAksi.ts`
+      (`findEligibleCandidates()`, `scanLookupManifest()`,
+      `addManifestItem()`) — satu-satunya jalur validasi eligibility
+      (milestone `diproses`/`dijemput`/`gagal_kirim` + exclude dobel-
+      manifest) dan insert `manifest_item`, dipakai BERSAMA oleh search
+      manual DAN scan QR, di KEDUA halaman (`/dashboard/manifest/[id]`
+      dan tombol "Scan untuk Muat" baru di `/tugas`).
+    - Komponen UI `components/ScanQRManifestOverlay.tsx` juga dipakai
+      bersama kedua halaman — bukan cuma logic-nya yang reuse, tampilan &
+      alur scan-nya identik.
+    - Feedback per scan: getar (`navigator.vibrate`) + beep pendek (Web
+      Audio, silent no-op kalau diblokir) + flash hijau/merah pada target
+      box + toast teks — TIDAK ada dialog konfirmasi yang menghentikan
+      sesi. Debounce: resi sama ter-scan ulang <2 detik diabaikan. Scan
+      resi tidak eligible (sudah di manifest lain/status tidak sesuai/
+      tidak ditemukan) TIDAK menghentikan sesi scan.
+    - **Checklist "sudah dicek" (opsional di spec, tapi user minta
+      dikerjakan langsung, tidak ditunda)**: scan ULANG resi yang sudah
+      ada di manifest **INI** (beda dari sudah ada di manifest LAIN yang
+      tetap dianggap gagal) ditandai "sudah dicek" — state lokal browser
+      murni (`useState<Set>`), **TIDAK ADA kolom/tabel DB**, reset saat
+      reload. Bisa juga dicentang manual lewat checkbox di list "Kiriman"
+      `/dashboard/manifest/[id]`. Sengaja dangkal, tanpa jejak
+      siapa-kapan.
+    - **Manifest aktif di `/tugas` ditentukan OTOMATIS** (KT #3 spec 08,
+      dijawab 19 Jul 2026) — asumsi satu sopir/kurir = satu trip aktif
+      per hari (`manifest.sopir_id = auth.uid()`, status draft/berangkat,
+      `tanggal_berangkat` = hari ini). Lebih dari satu match (di luar
+      asumsi) → ambil yang paling baru dibuat, tidak ada UI pilih manual.
+      Tidak ada manifest aktif → tombol tetap tampil tapi disabled dengan
+      pesan jelas.
+    - Scanner USB/hardware sengaja tidak didukung khusus — scanner fisik
+      yang mengetik+Enter otomatis jalan lewat search box manual existing.
+14. **Riwayat Transit Multi-Hub — ✅ SELESAI (19 Jul 2026)**: spec
+    terpisah `docs/spec/archive/09-transit-hub.md` (sudah diarsipkan).
+    Log transit **TERPISAH TOTAL dari milestone** — murni informatif,
+    TIDAK PERNAH mengubah `pengiriman.milestone` atau CHECK constraint-
+    nya. Milestone (spec 01) dan transit (spec 09) sengaja dua sistem
+    paralel, bukan digabung.
+    - Tabel baru `pengiriman_transit` (`tipe_event` tiba/berangkat, FK
+      `pengiriman_id` **ON DELETE CASCADE** — beda dari `manifest_biaya`/
+      `klaim` yang `NO ACTION`, karena log operasional melekat ke siklus
+      hidup kiriman bukan catatan finansial independen). Reuse tabel
+      `cabang` sebagai hub, tidak ada entitas hub terpisah, tidak ada
+      kolom pembeda `cabang.tipe` (jumlah cabang masih sedikit).
+    - View publik baru `pengiriman_transit_publik` — HANYA expose
+      `hub_kota`, tidak pernah nama cabang/alamat. View lama
+      `pengiriman_riwayat_publik` **tidak disentuh sama sekali**.
+    - Section "Riwayat Transit" baru di `/dashboard/pengiriman/[id]`
+      (daftar event + form tambah manual, role sama dengan akses transisi
+      milestone `dikirim`: superadmin/gudang/kurir/sopir, cs read-only).
+    - Integrasi manifest Berangkat: SETELAH bulk-update milestone Fase 3
+      (fungsi itu sendiri tidak diubah), insert otomatis event
+      "berangkat" untuk SETIAP kiriman dalam manifest — HANYA kalau
+      `manifest.cabang_id` terisi. `cabang_id` NULL → dilewati total,
+      dibuktikan via simulasi SQL dalam transaksi yang di-ROLLBACK (nol
+      perubahan perilaku ke manifest lama yang belum pernah diisi cabang).
+    - Timeline publik `/resi/[nomor]`: gabungan `pengiriman_riwayat_
+      publik` + `pengiriman_transit_publik`, digabung & diurutkan
+      `created_at` di level APLIKASI (dua query + `.sort()` JS, BUKAN
+      `UNION` di database — nol risiko regresi ke view lama).
+    - **Keputusan sadar v1**: tidak ada validasi urutan tiba/berangkat,
+      tidak ada perencanaan rute di muka, tidak ada transisi status
+      manifest baru untuk "tiba di hub" (event tiba selalu input manual
+      staf hub penerima) — ketiganya bisa diperluas nanti kalau terbukti
+      dibutuhkan, bukan dikerjakan sekarang.
+15. **Fase 15 — Self-service booking + notifikasi WA otomatis**.
+16. **Pembersihan**: hapus modul & tabel furniture yang sudah dipastikan
+    tidak dipakai (§3.2).
 
 ---
 
@@ -403,9 +786,16 @@ Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
 - [x] Model bisnis kurir/paket vs kargo/pindahan? → **Campuran**, ditandai
   field `jenis_layanan` (reguler/express = tarif otomatis nanti di Fase 2,
   kargo = manual quote)
-- [x] Ada berapa titik pickup/drop-off / cabang saat ini? → **2 hub**,
-  dibuat dulu dengan jumlah tetap 2 (bukan jaringan cabang dinamis besar).
-  Relevan untuk Fase 5.
+- [x] Ada berapa titik pickup/drop-off / cabang saat ini? → **Dinamis**,
+  jumlah cabang tidak di-hardcode — superadmin bisa tambah/kurangi kapan
+  saja (mulai dari 1). Relevan untuk Fase 5, tabel `cabang` perlu CRUD
+  sendiri (bukan cuma seed baris tetap).
+- [x] Cabang jadi isolasi data atau cuma label? → **Cuma label/filter**,
+  tidak ada pembatasan akses staf per cabang — semua staf tetap bisa lihat
+  semua data seperti sekarang. `cabang_id` hanya dipakai untuk filter
+  laporan & penugasan armada.
+- [x] Siapa yang CRUD daftar cabang? → **Superadmin only**, konsisten
+  dengan pola halaman admin lain (Tarif Zona, Pengguna).
 - [x] Apakah COD jadi metode pembayaran utama, atau mayoritas transfer? →
   **Transfer/cash lebih dominan**, COD tetap ada tapi bukan mayoritas —
   modul rekonsiliasi COD di Fase 4 tidak perlu dirancang seberat kalau COD

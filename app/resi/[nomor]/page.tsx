@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatRupiah } from "@/lib/utils";
 import { imgUrl } from "@/lib/image";
+import { MilestonePengiriman, AlasanGagal } from "@/lib/types";
+import { ALASAN_GAGAL_CFG } from "@/lib/pengirimanConstants";
 import {
 	CheckCircle2,
 	Loader2,
@@ -17,17 +19,25 @@ import {
 	Weight,
 	Truck,
 	Zap,
+	PackageX,
+	Undo2,
+	ArrowDownToLine,
+	ArrowUpFromLine,
 } from "lucide-react";
 
-type Milestone = "diproses" | "dijemput" | "dikirim" | "selesai";
+type Milestone = MilestonePengiriman;
 
 const MILESTONE_CFG: Record<Milestone, { label: string; desc: string }> = {
 	diproses: { label: "Diproses", desc: "Pengiriman sedang disiapkan" },
 	dijemput: { label: "Dijemput", desc: "Barang sudah dijemput dari pengirim" },
 	dikirim: { label: "Dikirim", desc: "Barang dalam perjalanan" },
+	gagal_kirim: { label: "Gagal Kirim", desc: "Pengiriman sempat gagal" },
+	retur: { label: "Retur", desc: "Dikembalikan ke pengirim" },
 	selesai: { label: "Selesai", desc: "Barang telah diterima" },
 };
 
+// Step indicator cuma render jalur sukses (4 tahap) — gagal_kirim/retur
+// ditampilkan sebagai banner terpisah, bukan node ke-5/6. Lihat §3 spec POD.
 const ALL_MILESTONES: Milestone[] = ["diproses", "dijemput", "dikirim", "selesai"];
 
 const JENIS_LAYANAN_CFG: Record<string, { label: string; Icon: any }> = {
@@ -50,6 +60,7 @@ export default function TrackingPage() {
 
 	const [info, setInfo] = useState<any>(null);
 	const [riwayat, setRiwayat] = useState<any[]>([]);
+	const [transit, setTransit] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [notFound, setNotFound] = useState(false);
 
@@ -64,7 +75,11 @@ export default function TrackingPage() {
 
 	const load = async () => {
 		setLoading(true);
-		const [{ data: publik }, { data: history }] = await Promise.all([
+		// Timeline publik = pengiriman_riwayat_publik (milestone) +
+		// pengiriman_transit_publik (transit, spec 09) — DUA query terpisah,
+		// digabung & diurutkan created_at di level aplikasi (bukan UNION di
+		// DB). View lama pengiriman_riwayat_publik TIDAK disentuh sama sekali.
+		const [{ data: publik }, { data: history }, { data: transitPublik }] = await Promise.all([
 			supabase
 				.from("pengiriman_publik")
 				.select("*")
@@ -72,6 +87,11 @@ export default function TrackingPage() {
 				.maybeSingle(),
 			supabase
 				.from("pengiriman_riwayat_publik")
+				.select("*")
+				.eq("nomor_resi", nomor.toUpperCase())
+				.order("created_at", { ascending: true }),
+			supabase
+				.from("pengiriman_transit_publik")
 				.select("*")
 				.eq("nomor_resi", nomor.toUpperCase())
 				.order("created_at", { ascending: true }),
@@ -84,6 +104,7 @@ export default function TrackingPage() {
 		}
 		setInfo(publik);
 		setRiwayat(history || []);
+		setTransit(transitPublik || []);
 		setLoading(false);
 	};
 
@@ -121,9 +142,23 @@ export default function TrackingPage() {
 	}
 
 	const current: Milestone = info.milestone ?? "diproses";
-	const currentIdx = ALL_MILESTONES.indexOf(current);
+	const isBranch = current === "gagal_kirim" || current === "retur";
+	const currentIdx = isBranch ? ALL_MILESTONES.length - 1 : ALL_MILESTONES.indexOf(current);
 	const jl = JENIS_LAYANAN_CFG[info.jenis_layanan] || JENIS_LAYANAN_CFG.reguler;
 	const JlIcon = jl.Icon;
+	const latestGagal = [...riwayat].reverse().find((r) => r.milestone === "gagal_kirim");
+
+	// Timeline gabungan (spec 09 §3/§5) — riwayat milestone + transit,
+	// digabung & diurutkan created_at DI LEVEL APLIKASI (bukan UNION di DB).
+	// Tidak mengubah bentuk/isi `riwayat` asli sama sekali, murni dipakai
+	// utk render section "Riwayat Update" di bawah.
+	type TimelineEntry =
+		| ({ jenis: "milestone" } & (typeof riwayat)[number])
+		| ({ jenis: "transit" } & (typeof transit)[number]);
+	const timeline: TimelineEntry[] = [
+		...riwayat.map((r) => ({ jenis: "milestone" as const, ...r })),
+		...transit.map((t) => ({ jenis: "transit" as const, ...t })),
+	].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
 	const semuaFoto = riwayat.filter((r) => r.foto_url).map((r) => r.foto_url);
 	const openLightbox = (url: string) => {
@@ -165,7 +200,7 @@ export default function TrackingPage() {
 					<div className="flex items-center mb-5">
 						{ALL_MILESTONES.map((step, idx) => {
 							const done = idx < currentIdx;
-							const active = idx === currentIdx;
+							const active = idx === currentIdx && !isBranch;
 							return (
 								<div key={step} className="flex items-center flex-1 last:flex-none">
 									<div className="flex flex-col items-center">
@@ -215,21 +250,48 @@ export default function TrackingPage() {
 					</div>
 
 					{/* Status aktif */}
-					<div
-						className={`rounded-xl px-4 py-3 ${current === "selesai" ? "bg-green-50 border border-green-100" : "bg-indigo-50 border border-indigo-100"}`}>
-						<p
-							className={`text-xs font-semibold uppercase tracking-wide ${current === "selesai" ? "text-green-600" : "text-indigo-600"}`}>
-							Status Saat Ini
-						</p>
-						<p
-							className={`text-base font-bold mt-0.5 ${current === "selesai" ? "text-green-800" : "text-indigo-800"}`}>
-							{MILESTONE_CFG[current].label}
-						</p>
-						<p
-							className={`text-xs mt-0.5 ${current === "selesai" ? "text-green-600" : "text-indigo-500"}`}>
-							{MILESTONE_CFG[current].desc}
-						</p>
-					</div>
+					{current === "gagal_kirim" ? (
+						<div className="rounded-xl px-4 py-3 bg-amber-50 border border-amber-100 flex items-start gap-2.5">
+							<PackageX size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
+							<div>
+								<p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+									Pengiriman Gagal
+								</p>
+								<p className="text-sm font-bold mt-0.5 text-amber-900">
+									Akan dijadwalkan ulang / menunggu keputusan
+								</p>
+								{latestGagal?.alasan_gagal && (
+									<p className="text-xs mt-0.5 text-amber-600">
+										{ALASAN_GAGAL_CFG[latestGagal.alasan_gagal as AlasanGagal]
+											?.labelPublik}
+									</p>
+								)}
+							</div>
+						</div>
+					) : current === "retur" ? (
+						<div className="rounded-xl px-4 py-3 bg-gray-100 border border-gray-200 flex items-center gap-2.5">
+							<Undo2 size={18} className="text-gray-600 flex-shrink-0" />
+							<p className="text-sm font-bold text-gray-800">
+								Dikembalikan ke Pengirim
+							</p>
+						</div>
+					) : (
+						<div
+							className={`rounded-xl px-4 py-3 ${current === "selesai" ? "bg-green-50 border border-green-100" : "bg-indigo-50 border border-indigo-100"}`}>
+							<p
+								className={`text-xs font-semibold uppercase tracking-wide ${current === "selesai" ? "text-green-600" : "text-indigo-600"}`}>
+								Status Saat Ini
+							</p>
+							<p
+								className={`text-base font-bold mt-0.5 ${current === "selesai" ? "text-green-800" : "text-indigo-800"}`}>
+								{MILESTONE_CFG[current].label}
+							</p>
+							<p
+								className={`text-xs mt-0.5 ${current === "selesai" ? "text-green-600" : "text-indigo-500"}`}>
+								{MILESTONE_CFG[current].desc}
+							</p>
+						</div>
+					)}
 				</div>
 
 				{/* Info pengiriman */}
@@ -294,49 +356,91 @@ export default function TrackingPage() {
 					</div>
 				</div>
 
-				{/* Riwayat & foto per milestone */}
-				{riwayat.length > 0 && (
+				{/* Riwayat & foto per milestone + transit (spec 09) — digabung, urut waktu */}
+				{timeline.length > 0 && (
 					<div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
 						<h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-4">
 							Riwayat Update
 						</h2>
 						<div className="space-y-4">
-							{riwayat.map((r, i) => (
-								<div key={i} className="flex gap-3">
-									<div className="flex flex-col items-center">
-										<div className="w-2.5 h-2.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
-										{i < riwayat.length - 1 && (
-											<div className="w-0.5 bg-gray-100 flex-1 mt-1" />
-										)}
-									</div>
-									<div className="flex-1 pb-2">
-										<div className="flex items-center gap-2 flex-wrap">
-											<span className="text-xs font-bold text-indigo-700">
-												{MILESTONE_CFG[r.milestone as Milestone]?.label ??
-													r.milestone}
-											</span>
-											<span className="text-[11px] text-gray-400">
-												{fmtDate(r.created_at)}
-											</span>
+							{timeline.map((r, i) =>
+								r.jenis === "transit" ? (
+									<div key={i} className="flex gap-3">
+										<div className="flex flex-col items-center">
+											<div
+												className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${
+													r.tipe_event === "tiba" ? "bg-emerald-400" : "bg-blue-400"
+												}`}
+											/>
+											{i < timeline.length - 1 && (
+												<div className="w-0.5 bg-gray-100 flex-1 mt-1" />
+											)}
 										</div>
-										{r.catatan && (
-											<p className="text-sm text-gray-700 mt-1 leading-relaxed">
-												{r.catatan}
-											</p>
-										)}
-										{r.foto_url && (
-											<button onClick={() => openLightbox(r.foto_url)} className="mt-2 block">
-												<img
-													src={imgUrl(r.foto_url, 300)}
-													alt="Foto update"
-													loading="lazy"
-													className="h-24 w-36 object-cover rounded-xl border border-gray-200 hover:opacity-90 transition"
-												/>
-											</button>
-										)}
+										<div className="flex-1 pb-2">
+											<div className="flex items-center gap-2 flex-wrap">
+												<span
+													className={`flex items-center gap-1 text-xs font-bold ${
+														r.tipe_event === "tiba"
+															? "text-emerald-700"
+															: "text-blue-700"
+													}`}>
+													{r.tipe_event === "tiba" ? (
+														<ArrowDownToLine size={12} />
+													) : (
+														<ArrowUpFromLine size={12} />
+													)}
+													{r.tipe_event === "tiba"
+														? `Tiba di ${r.hub_kota}`
+														: `Berangkat dari ${r.hub_kota}`}
+												</span>
+												<span className="text-[11px] text-gray-400">
+													{fmtDate(r.created_at)}
+												</span>
+											</div>
+										</div>
 									</div>
-								</div>
-							))}
+								) : (
+									<div key={i} className="flex gap-3">
+										<div className="flex flex-col items-center">
+											<div className="w-2.5 h-2.5 rounded-full bg-indigo-400 mt-1.5 flex-shrink-0" />
+											{i < timeline.length - 1 && (
+												<div className="w-0.5 bg-gray-100 flex-1 mt-1" />
+											)}
+										</div>
+										<div className="flex-1 pb-2">
+											<div className="flex items-center gap-2 flex-wrap">
+												<span className="text-xs font-bold text-indigo-700">
+													{MILESTONE_CFG[r.milestone as Milestone]?.label ??
+														r.milestone}
+												</span>
+												<span className="text-[11px] text-gray-400">
+													{fmtDate(r.created_at)}
+												</span>
+											</div>
+											{r.alasan_gagal && (
+												<p className="text-sm text-amber-600 font-medium mt-1">
+													{ALASAN_GAGAL_CFG[r.alasan_gagal as AlasanGagal]?.labelPublik}
+												</p>
+											)}
+											{r.catatan && (
+												<p className="text-sm text-gray-700 mt-1 leading-relaxed">
+													{r.catatan}
+												</p>
+											)}
+											{r.foto_url && (
+												<button onClick={() => openLightbox(r.foto_url)} className="mt-2 block">
+													<img
+														src={imgUrl(r.foto_url, 300)}
+														alt="Foto update"
+														loading="lazy"
+														className="h-24 w-36 object-cover rounded-xl border border-gray-200 hover:opacity-90 transition"
+													/>
+												</button>
+											)}
+										</div>
+									</div>
+								),
+							)}
 						</div>
 					</div>
 				)}

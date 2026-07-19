@@ -27,6 +27,7 @@ const emptyForm = {
 	kapasitas_m3: "",
 	status: "tersedia",
 	sopir_id: "",
+	cabang_id: "",
 	catatan: "",
 };
 
@@ -39,6 +40,7 @@ export default function ArmadaPage() {
 
 	const [list, setList] = useState<any[]>([]);
 	const [sopirList, setSopirList] = useState<any[]>([]);
+	const [cabangList, setCabangList] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [search, setSearch] = useState("");
 	const [modal, setModal] = useState<"form" | null>(null);
@@ -59,19 +61,21 @@ export default function ArmadaPage() {
 	if (authLoading || !canManage) return null;
 
 	const loadAll = async () => {
-		const [{ data }, { data: sopir }] = await Promise.all([
+		const [{ data }, { data: sopir }, { data: cabang }] = await Promise.all([
 			supabase
 				.from("armada")
-				.select("*, sopir:profiles!sopir_id(name)")
+				.select("*, sopir:profiles!sopir_id(name), cabang:cabang(nama)")
 				.order("plat_nomor"),
 			supabase
 				.from("profiles")
 				.select("id, name, role")
 				.in("role", ["sopir", "kurir"])
 				.order("name"),
+			supabase.from("cabang").select("id, nama").eq("aktif", true).order("nama"),
 		]);
 		setList(data || []);
 		setSopirList(sopir || []);
+		setCabangList(cabang || []);
 		setLoading(false);
 	};
 
@@ -86,6 +90,7 @@ export default function ArmadaPage() {
 				kapasitas_m3: row.kapasitas_m3 ? String(row.kapasitas_m3) : "",
 				status: row.status,
 				sopir_id: row.sopir_id || "",
+				cabang_id: row.cabang_id || "",
 				catatan: row.catatan || "",
 			});
 		} else {
@@ -107,6 +112,7 @@ export default function ArmadaPage() {
 			kapasitas_m3: form.kapasitas_m3 ? Number(form.kapasitas_m3) : null,
 			status: form.status,
 			sopir_id: form.sopir_id || null,
+			cabang_id: form.cabang_id || null,
 			catatan: form.catatan || null,
 		};
 
@@ -207,6 +213,11 @@ export default function ArmadaPage() {
 									<p className="flex items-center gap-1.5 text-xs text-gray-600 mt-2">
 										<User size={11} className="text-gray-400" /> {r.sopir.name}
 									</p>
+								)}
+								{r.cabang?.nama && (
+									<span className="inline-block mt-2 text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-semibold">
+										{r.cabang.nama}
+									</span>
 								)}
 								<div className="flex items-center gap-1 mt-3 pt-3 border-t border-gray-100">
 									<button
@@ -321,6 +332,24 @@ export default function ArmadaPage() {
 									{sopirList.map((s) => (
 										<option key={s.id} value={s.id}>
 											{s.name} ({s.role})
+										</option>
+									))}
+								</select>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Cabang (opsional)
+								</label>
+								<select
+									value={form.cabang_id}
+									onChange={(e) =>
+										setForm({ ...form, cabang_id: e.target.value })
+									}
+									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+									<option value="">— Tidak ada —</option>
+									{cabangList.map((c) => (
+										<option key={c.id} value={c.id}>
+											{c.nama}
 										</option>
 									))}
 								</select>

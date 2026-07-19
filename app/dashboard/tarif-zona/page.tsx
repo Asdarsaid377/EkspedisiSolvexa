@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatRupiah } from "@/lib/utils";
+import { logAktivitas } from "@/lib/aktivitas";
 import {
 	Plus,
 	Search,
@@ -28,7 +29,7 @@ const emptyForm = {
 };
 
 export default function TarifZonaPage() {
-	const { isSuperAdmin, loading: authLoading } = useAuth();
+	const { isSuperAdmin, loading: authLoading, profile } = useAuth();
 	const router = useRouter();
 	const supabase = createClient();
 
@@ -97,6 +98,8 @@ export default function TarifZonaPage() {
 			aktif: form.aktif,
 		};
 
+		const before = editingId ? list.find((r) => r.id === editingId) : null;
+
 		const { error } = editingId
 			? await supabase.from("tarif_zona").update(payload).eq("id", editingId)
 			: await supabase.from("tarif_zona").insert(payload);
@@ -109,6 +112,17 @@ export default function TarifZonaPage() {
 			);
 			setSaving(false);
 			return;
+		}
+
+		if (editingId) {
+			await logAktivitas(supabase, {
+				aksi: "edit_tarif",
+				entitas: "tarif_zona",
+				entitas_id: editingId,
+				ref: `${payload.kota_asal} → ${payload.kota_tujuan} (${payload.jenis_layanan})`,
+				detail: { sebelum: before, sesudah: payload },
+				created_by: profile?.id,
+			});
 		}
 
 		setSaving(false);
@@ -124,9 +138,24 @@ export default function TarifZonaPage() {
 		loadAll();
 	};
 
-	const hapus = async (id: string) => {
+	const hapus = async (row: any) => {
 		if (!confirm("Hapus tarif ini?")) return;
-		await supabase.from("tarif_zona").delete().eq("id", id);
+		const { error } = await supabase.from("tarif_zona").delete().eq("id", row.id);
+		if (error) return;
+
+		await logAktivitas(supabase, {
+			aksi: "hapus_tarif",
+			entitas: "tarif_zona",
+			entitas_id: row.id,
+			ref: `${row.kota_asal} → ${row.kota_tujuan} (${row.jenis_layanan})`,
+			detail: {
+				harga_per_kg: row.harga_per_kg,
+				harga_flat_min: row.harga_flat_min,
+				estimasi_hari: row.estimasi_hari,
+			},
+			created_by: profile?.id,
+		});
+
 		loadAll();
 	};
 
@@ -237,7 +266,7 @@ export default function TarifZonaPage() {
 												<Edit3 size={14} />
 											</button>
 											<button
-												onClick={() => hapus(r.id)}
+												onClick={() => hapus(r)}
 												className="p-1.5 hover:bg-red-50 rounded-lg text-red-500 transition">
 												<Trash2 size={14} />
 											</button>

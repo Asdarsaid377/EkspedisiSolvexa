@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// Service role: bypass RLS, tabel tracking tidak boleh writable dari client biasa
-const supabase = createClient(
-	process.env.NEXT_PUBLIC_SUPABASE_URL!,
-	process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+// Service role: bypass RLS, tabel tracking tidak boleh writable dari client biasa.
+// Lazy singleton — dibuat saat REQUEST pertama, bukan saat modul di-import,
+// supaya SUPABASE_SERVICE_ROLE_KEY murni runtime secret (tidak perlu
+// tersedia saat build; Next.js mengeksekusi modul route ini saat build
+// utk "collecting page data", instansiasi di top-level akan throw kalau
+// env var belum ada saat itu).
+let _supabase: SupabaseClient | null = null;
+function getSupabase(): SupabaseClient {
+	if (!_supabase) {
+		_supabase = createClient(
+			process.env.NEXT_PUBLIC_SUPABASE_URL!,
+			process.env.SUPABASE_SERVICE_ROLE_KEY!,
+		);
+	}
+	return _supabase;
+}
 
 async function handle(req: NextRequest) {
 	const p = req.nextUrl.searchParams;
@@ -40,7 +51,7 @@ async function handle(req: NextRequest) {
 	}
 
 	// 2. Device harus terdaftar & aktif
-	const { data: device } = await supabase
+	const { data: device } = await getSupabase()
 		.from("sopir_devices")
 		.select("device_id")
 		.eq("device_id", deviceId)
@@ -50,7 +61,7 @@ async function handle(req: NextRequest) {
 	if (!device) return new NextResponse("unknown device", { status: 403 });
 
 	// 3. Insert; abaikan duplikat dari buffering offline
-	const { error } = await supabase.from("tracking_sopir").upsert(
+	const { error } = await getSupabase().from("tracking_sopir").upsert(
 		{
 			device_id: deviceId,
 			lat,

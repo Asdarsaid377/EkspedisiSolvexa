@@ -22,3 +22,8 @@ export const ROLE_LABELS: Record<Role, string> = {
   kurir: "Kurir",
   sopir: "Sopir",
 };
+
+// Role yang diarahkan ke /tugas (halaman mobile lapangan) — dipakai baik
+// oleh guard route (app/tugas/layout.tsx) maupun redirect pasca-login
+// (app/login/page.tsx), lihat spec 07 KT #3.
+export const TUGAS_ROLES: string[] = ["sopir", "kurir"];

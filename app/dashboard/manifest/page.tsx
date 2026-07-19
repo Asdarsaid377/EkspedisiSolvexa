@@ -29,6 +29,7 @@ const STATUS_CFG: Record<string, { label: string; color: string }> = {
 const emptyForm = {
 	armada_id: "",
 	sopir_id: "",
+	cabang_id: "",
 	rute: "",
 	tanggal_berangkat: "",
 	catatan: "",
@@ -44,6 +45,7 @@ export default function ManifestPage() {
 	const [list, setList] = useState<any[]>([]);
 	const [armadaList, setArmadaList] = useState<any[]>([]);
 	const [sopirList, setSopirList] = useState<any[]>([]);
+	const [cabangList, setCabangList] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [search, setSearch] = useState("");
 	const [filterStatus, setFilterStatus] = useState<string>("semua");
@@ -59,27 +61,30 @@ export default function ManifestPage() {
 	if (authLoading) return null;
 
 	const loadAll = async () => {
-		const [{ data }, { data: armada }, { data: sopir }] = await Promise.all([
-			supabase
-				.from("manifest")
-				.select(
-					"*, armada:armada(plat_nomor, jenis_kendaraan), sopir:profiles!sopir_id(name), items:manifest_item(id)",
-				)
-				.order("created_at", { ascending: false }),
-			supabase
-				.from("armada")
-				.select("id, plat_nomor, jenis_kendaraan, sopir_id")
-				.eq("aktif", true)
-				.order("plat_nomor"),
-			supabase
-				.from("profiles")
-				.select("id, name, role")
-				.in("role", ["sopir", "kurir"])
-				.order("name"),
-		]);
+		const [{ data }, { data: armada }, { data: sopir }, { data: cabang }] =
+			await Promise.all([
+				supabase
+					.from("manifest")
+					.select(
+						"*, armada:armada(plat_nomor, jenis_kendaraan), sopir:profiles!sopir_id(name), cabang:cabang(nama), items:manifest_item(id)",
+					)
+					.order("created_at", { ascending: false }),
+				supabase
+					.from("armada")
+					.select("id, plat_nomor, jenis_kendaraan, sopir_id, cabang_id")
+					.eq("aktif", true)
+					.order("plat_nomor"),
+				supabase
+					.from("profiles")
+					.select("id, name, role")
+					.in("role", ["sopir", "kurir"])
+					.order("name"),
+				supabase.from("cabang").select("id, nama").eq("aktif", true).order("nama"),
+			]);
 		setList(data || []);
 		setArmadaList(armada || []);
 		setSopirList(sopir || []);
+		setCabangList(cabang || []);
 		setLoading(false);
 	};
 
@@ -94,6 +99,7 @@ export default function ManifestPage() {
 			...f,
 			armada_id: armadaId,
 			sopir_id: a?.sopir_id || f.sopir_id,
+			cabang_id: a?.cabang_id || f.cabang_id,
 		}));
 	};
 
@@ -104,6 +110,7 @@ export default function ManifestPage() {
 			.insert({
 				armada_id: form.armada_id || null,
 				sopir_id: form.sopir_id || null,
+				cabang_id: form.cabang_id || null,
 				rute: form.rute || null,
 				tanggal_berangkat: form.tanggal_berangkat || null,
 				catatan: form.catatan || null,
@@ -229,6 +236,11 @@ export default function ManifestPage() {
 											<span className="flex items-center gap-1.5 text-gray-500">
 												<Package size={13} /> {m.items?.length || 0} kiriman
 											</span>
+											{m.cabang?.nama && (
+												<span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-semibold">
+													{m.cabang.nama}
+												</span>
+											)}
 										</div>
 									</div>
 									<div className="flex items-center gap-1 flex-shrink-0">
@@ -292,6 +304,22 @@ export default function ManifestPage() {
 									{sopirList.map((s) => (
 										<option key={s.id} value={s.id}>
 											{s.name} ({s.role})
+										</option>
+									))}
+								</select>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Cabang (opsional)
+								</label>
+								<select
+									value={form.cabang_id}
+									onChange={(e) => setForm({ ...form, cabang_id: e.target.value })}
+									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+									<option value="">— Pilih Cabang —</option>
+									{cabangList.map((c) => (
+										<option key={c.id} value={c.id}>
+											{c.nama}
 										</option>
 									))}
 								</select>

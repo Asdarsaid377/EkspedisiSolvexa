@@ -5,49 +5,41 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
 import { formatRupiah } from "@/lib/utils";
-import { Plus, Pencil, Trash2, X, Save, Search } from "lucide-react";
-
-const KATEGORI_OPTIONS = [
-	"Operasional",
-	"Gaji / Upah",
-	"Transport & Pengiriman",
-	"Utilitas",
-	"Marketing & Promosi",
-	"Pembelian Perlengkapan",
-	"Lainnya",
-];
+import { Pengeluaran, PengeluaranKategori } from "@/lib/types";
+import { PENGELUARAN_KATEGORI_CFG } from "@/lib/pengirimanConstants";
+import { Plus, Pencil, Trash2, X, Save, Search, Camera } from "lucide-react";
 
 const KATEGORI_COLORS: Record<string, string> = {
-	Operasional: "bg-blue-50 text-blue-700",
-	"Gaji / Upah": "bg-green-50 text-green-700",
-	"Transport & Pengiriman": "bg-yellow-50 text-yellow-700",
-	Utilitas: "bg-cyan-50 text-cyan-700",
-	"Marketing & Promosi": "bg-pink-50 text-pink-700",
-	"Pembelian Perlengkapan": "bg-purple-50 text-purple-700",
-	Lainnya: "bg-gray-100 text-gray-600",
+	gaji: "bg-green-50 text-green-700",
+	sewa: "bg-blue-50 text-blue-700",
+	utilitas: "bg-cyan-50 text-cyan-700",
+	maintenance_armada: "bg-orange-50 text-orange-700",
+	pajak_armada: "bg-red-50 text-red-700",
+	perlengkapan: "bg-purple-50 text-purple-700",
+	pemasaran: "bg-pink-50 text-pink-700",
+	lainnya: "bg-gray-100 text-gray-600",
 };
 
-interface Pengeluaran {
-	id: string;
-	tanggal: string;
-	kategori: string;
-	keterangan: string;
-	jumlah: number;
+// Kategori lama (arsip furniture, mis. "Transport & Pengiriman") tidak ada
+// di PENGELUARAN_KATEGORI_CFG — tampilkan apa adanya, badge abu default.
+function kategoriLabel(kat: string): string {
+	return PENGELUARAN_KATEGORI_CFG[kat as PengeluaranKategori]?.label ?? kat;
 }
 
 const emptyForm = {
 	tanggal: new Date().toISOString().split("T")[0],
-	kategori: KATEGORI_OPTIONS[0],
+	kategori: "lainnya" as PengeluaranKategori,
 	keterangan: "",
 	jumlah: "",
+	armada_id: "",
+	cabang_id: "",
 };
 
 const KEU_ROLES = ["superadmin", "keuangan"];
 
 export default function PengeluaranPage() {
 	const supabase = createClient();
-	const { isSuperAdmin, role, loading: authLoading } = useAuth();
-	console.log(role);
+	const { role, loading: authLoading } = useAuth();
 	const router = useRouter();
 
 	useEffect(() => {
@@ -55,9 +47,7 @@ export default function PengeluaranPage() {
 			router.replace("/dashboard");
 	}, [role, authLoading, router]);
 
-	if (authLoading || !KEU_ROLES.includes(role ?? "")) return null;
 	const now = new Date();
-
 	const defaultDari = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
 	const defaultSampai = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 		.toISOString()
@@ -69,7 +59,10 @@ export default function PengeluaranPage() {
 	});
 	const [search, setSearch] = useState("");
 	const [filterKategori, setFilterKategori] = useState("");
+	const [filterArmada, setFilterArmada] = useState("");
 	const [list, setList] = useState<Pengeluaran[]>([]);
+	const [armadaList, setArmadaList] = useState<any[]>([]);
+	const [cabangList, setCabangList] = useState<any[]>([]);
 	const [loading, setLoading] = useState(true);
 
 	const [activeModal, setActiveModal] = useState<"tambah" | "edit" | null>(
@@ -77,20 +70,37 @@ export default function PengeluaranPage() {
 	);
 	const [editingId, setEditingId] = useState<string | null>(null);
 	const [formData, setFormData] = useState(emptyForm);
+	const [fotoFile, setFotoFile] = useState<File | null>(null);
+	const [fotoPreview, setFotoPreview] = useState<string | null>(null);
 	const [saving, setSaving] = useState(false);
 	const [formError, setFormError] = useState("");
 	const [deletingId, setDeletingId] = useState<string | null>(null);
+
+	useEffect(() => {
+		supabase
+			.from("armada")
+			.select("id, plat_nomor")
+			.order("plat_nomor")
+			.then(({ data }) => setArmadaList(data || []));
+		supabase
+			.from("cabang")
+			.select("id, nama")
+			.eq("aktif", true)
+			.order("nama")
+			.then(({ data }) => setCabangList(data || []));
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	const load = useCallback(async () => {
 		setLoading(true);
 		const { data } = await supabase
 			.from("pengeluaran")
-			.select("*")
+			.select("*, armada:armada(plat_nomor), cabang:cabang(nama)")
 			.gte("tanggal", filter.dari)
 			.lte("tanggal", filter.sampai)
 			.order("tanggal", { ascending: false })
 			.order("created_at", { ascending: false });
-		setList(data || []);
+		setList((data as any) || []);
 		setLoading(false);
 	}, [filter]);
 
@@ -98,8 +108,15 @@ export default function PengeluaranPage() {
 		load();
 	}, [load]);
 
+	if (authLoading || !KEU_ROLES.includes(role ?? "")) return null;
+
+	const wajibArmada =
+		PENGELUARAN_KATEGORI_CFG[formData.kategori]?.wajibArmada ?? false;
+
 	const openTambah = () => {
 		setFormData({ ...emptyForm, tanggal: now.toISOString().split("T")[0] });
+		setFotoFile(null);
+		setFotoPreview(null);
 		setFormError("");
 		setEditingId(null);
 		setActiveModal("tambah");
@@ -108,13 +125,24 @@ export default function PengeluaranPage() {
 	const openEdit = (p: Pengeluaran) => {
 		setFormData({
 			tanggal: p.tanggal,
-			kategori: p.kategori,
+			kategori: (p.kategori as PengeluaranKategori) || "lainnya",
 			keterangan: p.keterangan,
 			jumlah: String(p.jumlah),
+			armada_id: p.armada_id || "",
+			cabang_id: p.cabang_id || "",
 		});
+		setFotoFile(null);
+		setFotoPreview(p.foto_bukti || null);
 		setFormError("");
 		setEditingId(p.id);
 		setActiveModal("edit");
+	};
+
+	const handleFotoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+		const file = e.target.files?.[0];
+		if (!file) return;
+		setFotoFile(file);
+		setFotoPreview(URL.createObjectURL(file));
 	};
 
 	const save = async () => {
@@ -126,21 +154,53 @@ export default function PengeluaranPage() {
 			setFormError("Jumlah harus lebih dari 0");
 			return;
 		}
+		if (wajibArmada && !formData.armada_id) {
+			setFormError(
+				`Kategori "${kategoriLabel(formData.kategori)}" wajib pilih armada`,
+			);
+			return;
+		}
+		setFormError("");
 		setSaving(true);
+
+		let foto_bukti: string | null = editingId ? fotoPreview : null;
+		if (fotoFile) {
+			const ext = fotoFile.name.split(".").pop();
+			const path = `pengeluaran/${crypto.randomUUID()}/${Date.now()}.${ext}`;
+			const { error: upErr } = await supabase.storage
+				.from("BungaNaik")
+				.upload(path, fotoFile);
+			if (!upErr) {
+				const { data: urlData } = supabase.storage
+					.from("BungaNaik")
+					.getPublicUrl(path);
+				foto_bukti = urlData.publicUrl;
+			}
+		}
+
 		const payload = {
 			tanggal: formData.tanggal,
 			kategori: formData.kategori,
 			keterangan: formData.keterangan.trim(),
 			jumlah: Number(formData.jumlah),
+			armada_id: formData.armada_id || null,
+			cabang_id: formData.cabang_id || null,
+			foto_bukti,
 		};
-		if (editingId) {
-			await supabase
-				.from("pengeluaran")
-				.update({ ...payload, updated_at: new Date().toISOString() })
-				.eq("id", editingId);
-		} else {
-			await supabase.from("pengeluaran").insert(payload);
+
+		const { error } = editingId
+			? await supabase
+					.from("pengeluaran")
+					.update({ ...payload, updated_at: new Date().toISOString() })
+					.eq("id", editingId)
+			: await supabase.from("pengeluaran").insert(payload);
+
+		if (error) {
+			setFormError("Gagal menyimpan: " + error.message);
+			setSaving(false);
+			return;
 		}
+
 		setActiveModal(null);
 		setSaving(false);
 		load();
@@ -152,14 +212,6 @@ export default function PengeluaranPage() {
 		load();
 	};
 
-	if (!authLoading && !KEU_ROLES.includes(role ?? "")) {
-		return (
-			<div className="text-center py-20 text-gray-400">
-				Halaman ini hanya dapat diakses oleh owner.
-			</div>
-		);
-	}
-
 	// Aggregasi per kategori
 	const byKategori = list.reduce<Record<string, number>>((acc, p) => {
 		acc[p.kategori] = (acc[p.kategori] || 0) + p.jumlah;
@@ -170,6 +222,7 @@ export default function PengeluaranPage() {
 
 	const filtered = list.filter((p) => {
 		if (filterKategori && p.kategori !== filterKategori) return false;
+		if (filterArmada && p.armada_id !== filterArmada) return false;
 		if (search && !p.keterangan.toLowerCase().includes(search.toLowerCase()))
 			return false;
 		return true;
@@ -188,7 +241,7 @@ export default function PengeluaranPage() {
 				</p>
 			</div>
 
-			{/* Filter periode */}
+			{/* Filter periode + armada */}
 			<div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6 flex flex-wrap gap-4 items-end">
 				<div>
 					<label className="block text-xs font-medium text-gray-500 mb-1">
@@ -211,6 +264,22 @@ export default function PengeluaranPage() {
 						onChange={(e) => setFilter({ ...filter, sampai: e.target.value })}
 						className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 					/>
+				</div>
+				<div>
+					<label className="block text-xs font-medium text-gray-500 mb-1">
+						Armada
+					</label>
+					<select
+						value={filterArmada}
+						onChange={(e) => setFilterArmada(e.target.value)}
+						className="px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+						<option value="">Semua Armada</option>
+						{armadaList.map((a) => (
+							<option key={a.id} value={a.id}>
+								{a.plat_nomor}
+							</option>
+						))}
+					</select>
 				</div>
 				<button
 					onClick={() =>
@@ -249,7 +318,9 @@ export default function PengeluaranPage() {
 								<div
 									key={kat}
 									className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-									<p className="text-xs text-gray-500 mb-1 truncate">{kat}</p>
+									<p className="text-xs text-gray-500 mb-1 truncate">
+										{kategoriLabel(kat)}
+									</p>
 									<p className="text-xl font-bold text-gray-800">
 										{formatRupiah(total)}
 									</p>
@@ -263,7 +334,7 @@ export default function PengeluaranPage() {
 							))}
 					</div>
 
-					{/* Breakdown per kategori — chips */}
+					{/* Breakdown per kategori — chips (jadi filter kategori) */}
 					{Object.keys(byKategori).length > 0 && (
 						<div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 mb-6">
 							<p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
@@ -292,7 +363,7 @@ export default function PengeluaranPage() {
 													? "bg-indigo-600 text-white"
 													: `${KATEGORI_COLORS[kat] || "bg-gray-100 text-gray-600"} hover:opacity-80`
 											}`}>
-											{kat}: {formatRupiah(total)}
+											{kategoriLabel(kat)}: {formatRupiah(total)}
 										</button>
 									))}
 							</div>
@@ -314,7 +385,7 @@ export default function PengeluaranPage() {
 									className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								/>
 							</div>
-							{(filterKategori || search) && (
+							{(filterKategori || filterArmada || search) && (
 								<p className="text-sm text-gray-500">
 									{filtered.length} item —{" "}
 									<span className="font-semibold text-orange-600">
@@ -344,6 +415,9 @@ export default function PengeluaranPage() {
 											<th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
 												Keterangan
 											</th>
+											<th className="text-left px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
+												Armada
+											</th>
 											<th className="text-right px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
 												Jumlah
 											</th>
@@ -355,7 +429,7 @@ export default function PengeluaranPage() {
 											deletingId === p.id ? (
 												<tr key={p.id} className="bg-red-50">
 													<td
-														colSpan={4}
+														colSpan={5}
 														className="px-6 py-3 text-sm text-red-700">
 														Hapus <strong>{p.keterangan}</strong> (
 														{formatRupiah(p.jumlah)})?
@@ -389,11 +463,14 @@ export default function PengeluaranPage() {
 													<td className="px-6 py-3">
 														<span
 															className={`text-xs font-medium px-2.5 py-1 rounded-full whitespace-nowrap ${KATEGORI_COLORS[p.kategori] || "bg-gray-100 text-gray-600"}`}>
-															{p.kategori}
+															{kategoriLabel(p.kategori)}
 														</span>
 													</td>
 													<td className="px-6 py-3 text-gray-700">
 														{p.keterangan}
+													</td>
+													<td className="px-6 py-3 text-gray-500 whitespace-nowrap">
+														{(p as any).armada?.plat_nomor || "-"}
 													</td>
 													<td className="px-6 py-3 text-right font-semibold text-gray-900 whitespace-nowrap">
 														{formatRupiah(p.jumlah)}
@@ -419,9 +496,9 @@ export default function PengeluaranPage() {
 									<tfoot className="border-t-2 border-gray-200 bg-gray-50/80">
 										<tr>
 											<td
-												colSpan={3}
+												colSpan={4}
 												className="px-6 py-3 text-xs font-semibold text-gray-500 uppercase">
-												{filterKategori || search
+												{filterKategori || filterArmada || search
 													? "Total yang tampil"
 													: "Total Pengeluaran"}
 											</td>
@@ -441,7 +518,7 @@ export default function PengeluaranPage() {
 			{/* Modal Tambah / Edit */}
 			{activeModal && (
 				<div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-					<div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+					<div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
 						<div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
 							<h3 className="font-semibold text-gray-900">
 								{activeModal === "tambah"
@@ -476,17 +553,67 @@ export default function PengeluaranPage() {
 									<select
 										value={formData.kategori}
 										onChange={(e) =>
-											setFormData({ ...formData, kategori: e.target.value })
+											setFormData({
+												...formData,
+												kategori: e.target.value as PengeluaranKategori,
+												armada_id: PENGELUARAN_KATEGORI_CFG[
+													e.target.value as PengeluaranKategori
+												]?.wajibArmada
+													? formData.armada_id
+													: "",
+											})
 										}
 										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
-										{KATEGORI_OPTIONS.map((k) => (
-											<option key={k} value={k}>
-												{k}
+										{Object.entries(PENGELUARAN_KATEGORI_CFG).map(
+											([code, cfg]) => (
+												<option key={code} value={code}>
+													{cfg.label}
+												</option>
+											),
+										)}
+									</select>
+								</div>
+							</div>
+							{wajibArmada && (
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">
+										Armada <span className="text-red-500">*</span>
+									</label>
+									<select
+										value={formData.armada_id}
+										onChange={(e) =>
+											setFormData({ ...formData, armada_id: e.target.value })
+										}
+										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+										<option value="">Pilih armada...</option>
+										{armadaList.map((a) => (
+											<option key={a.id} value={a.id}>
+												{a.plat_nomor}
 											</option>
 										))}
 									</select>
 								</div>
-							</div>
+							)}
+							{cabangList.length > 0 && (
+								<div>
+									<label className="block text-sm font-medium text-gray-700 mb-1">
+										Cabang (opsional)
+									</label>
+									<select
+										value={formData.cabang_id}
+										onChange={(e) =>
+											setFormData({ ...formData, cabang_id: e.target.value })
+										}
+										className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white">
+										<option value="">- Tidak diisi -</option>
+										{cabangList.map((c) => (
+											<option key={c.id} value={c.id}>
+												{c.nama}
+											</option>
+										))}
+									</select>
+								</div>
+							)}
 							<div>
 								<label className="block text-sm font-medium text-gray-700 mb-1">
 									Keterangan
@@ -496,7 +623,7 @@ export default function PengeluaranPage() {
 									onChange={(e) =>
 										setFormData({ ...formData, keterangan: e.target.value })
 									}
-									placeholder="Misal: Gaji karyawan Juni, Bensin pengiriman..."
+									placeholder="Misal: Gaji karyawan Juni, servis rutin armada..."
 									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								/>
 							</div>
@@ -514,6 +641,28 @@ export default function PengeluaranPage() {
 									min={0}
 									className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
 								/>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">
+									Foto Nota (opsional)
+								</label>
+								<label className="flex items-center gap-2 px-3 py-2.5 border border-dashed border-gray-300 rounded-xl text-sm text-gray-500 cursor-pointer hover:bg-gray-50 transition">
+									<Camera size={16} />
+									{fotoFile ? fotoFile.name : "Pilih foto..."}
+									<input
+										type="file"
+										accept="image/*"
+										onChange={handleFotoChange}
+										className="hidden"
+									/>
+								</label>
+								{fotoPreview && (
+									<img
+										src={fotoPreview}
+										alt="Preview nota"
+										className="mt-2 h-24 rounded-lg border border-gray-200 object-cover"
+									/>
+								)}
 							</div>
 							{formError && <p className="text-sm text-red-500">{formError}</p>}
 						</div>

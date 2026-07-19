@@ -45,6 +45,7 @@ import {
 	PackageCheck,
 	DollarSign,
 	ShieldAlert,
+	Building2,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -60,7 +61,15 @@ const navItems = [
 		href: "/dashboard/absensi",
 		label: "Absensi",
 		icon: ScanFace,
-		roles: ["superadmin", "kasir", "keuangan", "cs", "gudang", "kurir", "sopir"],
+		roles: [
+			"superadmin",
+			"kasir",
+			"keuangan",
+			"cs",
+			"gudang",
+			"kurir",
+			"sopir",
+		],
 	},
 	// Furniture-specific — tidak dibutuhkan untuk expedisi
 	// {
@@ -77,19 +86,25 @@ const navItems = [
 	// },
 ];
 
-const ownerItems = [
-	{ href: "/dashboard/owner/workspace", label: "Meja Kerja Owner", icon: Layers },
-	{ href: "/dashboard/owner/asisten", label: "Meja Kerja Asisten Owner", icon: UserCog },
-];
+// Grup Owner di-hide sementara dari sidebar — halaman masih ada, cuma navnya disembunyikan
+// const ownerItems = [
+// 	{ href: "/dashboard/owner/workspace", label: "Meja Kerja Owner", icon: Layers },
+// 	{ href: "/dashboard/owner/asisten", label: "Meja Kerja Asisten Owner", icon: UserCog },
+// ];
 
-const penjualanItems = [
-	{
-		href: "/dashboard/penjualan",
-		label: "Penjualan",
-		icon: ShoppingCart,
-		roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
-	},
-	// Furniture retail — tidak dibutuhkan untuk expedisi
+// Penjualan arsip furniture — beku sejak Fase 1, tidak dibutuhkan untuk expedisi
+const penjualanItems: {
+	href: string;
+	label: string;
+	icon: any;
+	roles: string[];
+}[] = [
+	// {
+	// 	href: "/dashboard/penjualan",
+	// 	label: "Penjualan",
+	// 	icon: ShoppingCart,
+	// 	roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
+	// },
 	// {
 	// 	href: "/dashboard/pos",
 	// 	label: "Kasir (POS)",
@@ -144,7 +159,15 @@ const pengirimanItems = [
 		href: "/dashboard/manifest",
 		label: "Manifest",
 		icon: ClipboardList,
-		roles: ["superadmin", "gudang", "sopir", "kurir", "cs", "keuangan", "kasir"],
+		roles: [
+			"superadmin",
+			"gudang",
+			"sopir",
+			"kurir",
+			"cs",
+			"keuangan",
+			"kasir",
+		],
 	},
 	// Custom order furniture — tidak dibutuhkan untuk expedisi
 	// {
@@ -177,7 +200,21 @@ const pengirimanEntitasItems = [
 		href: "/dashboard/pengiriman",
 		label: "Pengiriman",
 		icon: PackageCheck,
-		roles: ["superadmin", "cs", "kasir", "keuangan", "gudang", "kurir", "sopir"],
+		roles: [
+			"superadmin",
+			"cs",
+			"kasir",
+			"keuangan",
+			"gudang",
+			"kurir",
+			"sopir",
+		],
+	},
+	{
+		href: "/dashboard/customer",
+		label: "Customer",
+		icon: Users,
+		roles: ["superadmin", "cs", "kasir", "keuangan"],
 	},
 ];
 
@@ -202,12 +239,9 @@ const kontrolItems: {
 	// },
 ];
 
+// Grup Keuangan — "Meja Kerja Keuangan" sengaja tidak dimasukkan (18 Jul 2026,
+// atas permintaan eksplisit), hanya Laporan Keuangan + Pengeluaran (spec 06)
 const keuanganItems = [
-	{
-		href: "/dashboard/keuangan/workspace",
-		label: "Meja Kerja Keuangan",
-		icon: Briefcase,
-	},
 	{
 		href: "/dashboard/keuangan/laporan",
 		label: "Laporan Keuangan",
@@ -221,15 +255,39 @@ const keuanganItems = [
 ];
 
 const laporanItems = [
-	{ href: "/dashboard/laporan", label: "Laporan Penjualan", icon: FileText },
+	// Laporan Penjualan arsip furniture — beku sejak Fase 1, tidak relevan untuk expedisi
+	// { href: "/dashboard/laporan", label: "Laporan Penjualan", icon: FileText },
 	// { href: "/dashboard/laporan/reseller", label: "Top Reseller", icon: Trophy },
 	// { href: "/dashboard/reseller/tier", label: "Tier Reseller", icon: Award },
 	// { href: "/dashboard/laporan/produk", label: "Laporan Produk", icon: BoxesIcon },
 	// { href: "/dashboard/stock-aging", label: "Usia Barang", icon: Clock },
-	{ href: "/dashboard/laporan/sopir", label: "Laporan Sopir", icon: Truck },
+	{ href: "/dashboard/laporan/sopir", label: "Laporan Petugas", icon: Truck },
 	// { href: "/dashboard/laporan/tukang", label: "Laporan Tukang", icon: Wrench },
-	{ href: "/dashboard/laporan/wilayah", label: "Laporan Wilayah", icon: MapPin },
-	{ href: "/dashboard/laporan/review", label: "Kritik & Saran", icon: MessageSquare },
+	{
+		href: "/dashboard/laporan/wilayah",
+		label: "Laporan Wilayah",
+		icon: MapPin,
+	},
+	{
+		href: "/dashboard/piutang",
+		label: "Piutang",
+		icon: Receipt,
+	},
+	{
+		href: "/dashboard/laporan/keterlambatan",
+		label: "Keterlambatan",
+		icon: Clock,
+	},
+	{
+		href: "/dashboard/laporan/laba-trip",
+		label: "Laba per Trip",
+		icon: TrendingUp,
+	},
+	{
+		href: "/dashboard/laporan/review",
+		label: "Kritik & Saran",
+		icon: MessageSquare,
+	},
 ];
 
 // Modul HPP produksi furniture — tidak dibutuhkan untuk expedisi
@@ -248,6 +306,7 @@ const hppItems: { href: string; label: string; icon: any }[] = [
 const adminItems = [
 	{ href: "/dashboard/pengguna", label: "Pengguna", icon: Settings },
 	{ href: "/dashboard/tarif-zona", label: "Tarif Zona", icon: DollarSign },
+	{ href: "/dashboard/cabang", label: "Cabang", icon: Building2 },
 ];
 
 // Didefinisikan di luar komponen agar referensi fungsi stabil — cegah unmount/remount tiap re-render
@@ -264,7 +323,8 @@ function NavLink({
 	pathname: string;
 	onClose: () => void;
 }) {
-	const active = pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
+	const active =
+		pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
 	return (
 		<Link
 			href={href}
@@ -313,13 +373,19 @@ function SubNavLink({
 	);
 }
 
-export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean }) {
+export default function Sidebar({
+	overlayMode = false,
+}: {
+	overlayMode?: boolean;
+}) {
 	const pathname = usePathname();
 	const { profile, signOut, isSuperAdmin, role } = useAuth();
 	const visibleNavItems = navItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
-	const canSeeReports = ["superadmin", "keuangan", "gudang"].includes(role ?? "");
+	const canSeeReports = ["superadmin", "keuangan", "gudang"].includes(
+		role ?? "",
+	);
 	const canSeeKeuangan = ["superadmin", "keuangan"].includes(role ?? "");
 	const visiblePenjualanItems = penjualanItems.filter((item) =>
 		item.roles.includes(role ?? ""),
@@ -340,8 +406,8 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 		item.roles.includes(role ?? ""),
 	);
 	const [open, setOpen] = useState(false);
-	const isOwnerActive = ownerItems.some((i) => pathname.startsWith(i.href));
-	const [ownerOpen, setOwnerOpen] = useState(isOwnerActive);
+	// const isOwnerActive = ownerItems.some((i) => pathname.startsWith(i.href));
+	// const [ownerOpen, setOwnerOpen] = useState(isOwnerActive);
 	const isLaporanActive = laporanItems.some((i) => pathname.startsWith(i.href));
 	const [laporanOpen, setLaporanOpen] = useState(isLaporanActive);
 	const isKeuanganActive = keuanganItems.some((i) =>
@@ -352,13 +418,17 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 		pathname.startsWith(i.href),
 	);
 	const [penjualanOpen, setPenjualanOpen] = useState(isPenjualanActive);
-	const isResellerActive = resellerItems.some((i) => pathname.startsWith(i.href));
+	const isResellerActive = resellerItems.some((i) =>
+		pathname.startsWith(i.href),
+	);
 	const [resellerOpen, setResellerOpen] = useState(isResellerActive);
 	const isPengirimanActive = pengirimanItems.some((i) =>
 		pathname.startsWith(i.href),
 	);
 	const [pengirimanOpen, setPengirimanOpen] = useState(isPengirimanActive);
-	const isCodKlaimActive = codKlaimItems.some((i) => pathname.startsWith(i.href));
+	const isCodKlaimActive = codKlaimItems.some((i) =>
+		pathname.startsWith(i.href),
+	);
 	const [codKlaimOpen, setCodKlaimOpen] = useState(isCodKlaimActive);
 	const isKontrolActive = kontrolItems.some((i) => pathname.startsWith(i.href));
 	const [kontrolOpen, setKontrolOpen] = useState(isKontrolActive);
@@ -386,16 +456,26 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 					Menu
 				</p>
 				{visibleNavItems.map((item) => (
-					<NavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+					<NavLink
+						key={item.href}
+						{...item}
+						pathname={pathname}
+						onClose={closeMenu}
+					/>
 				))}
 
 				{/* Entitas Pengiriman (Fase 1) — order/resi/tracking expedisi */}
 				{visiblePengirimanEntitasItems.map((item) => (
-					<NavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+					<NavLink
+						key={item.href}
+						{...item}
+						pathname={pathname}
+						onClose={closeMenu}
+					/>
 				))}
 
-				{/* Collapsible Owner — superadmin only */}
-				{isSuperAdmin && (
+				{/* Collapsible Owner — superadmin only — di-hide sementara, lihat CLAUDE.md */}
+				{/* {isSuperAdmin && (
 					<div>
 						<button
 							onClick={() => setOwnerOpen(!ownerOpen)}
@@ -417,7 +497,7 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							</div>
 						)}
 					</div>
-				)}
+				)} */}
 
 				{/* Collapsible Penjualan & POS */}
 				{visiblePenjualanItems.length > 0 && (
@@ -432,12 +512,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<ShoppingCart size={18} />
 							<span className="flex-1 text-left">Penjualan</span>
-							{penjualanOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{penjualanOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{penjualanOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visiblePenjualanItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -457,12 +546,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<Users size={18} />
 							<span className="flex-1 text-left">Reseller & Pelanggan</span>
-							{resellerOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{resellerOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{resellerOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visibleResellerItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -482,12 +580,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<Truck size={18} />
 							<span className="flex-1 text-left">Operasional Armada</span>
-							{pengirimanOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{pengirimanOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{pengirimanOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visiblePengirimanItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -507,12 +614,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<Wallet size={18} />
 							<span className="flex-1 text-left">COD & Klaim</span>
-							{codKlaimOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{codKlaimOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{codKlaimOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visibleCodKlaimItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -532,12 +648,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<Target size={18} />
 							<span className="flex-1 text-left">Kontrol Penjualan</span>
-							{kontrolOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{kontrolOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{kontrolOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visibleKontrolItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -557,19 +682,29 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<BarChart2 size={18} />
 							<span className="flex-1 text-left">Laporan</span>
-							{laporanOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{laporanOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{laporanOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{laporanItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
 					</div>
 				)}
 
-				{/* Collapsible Keuangan */}
+				{/* Collapsible Keuangan — Laporan Keuangan + Pengeluaran (spec 06), "Meja
+					Kerja Keuangan" sengaja tidak ditampilkan */}
 				{canSeeKeuangan && (
 					<div>
 						<button
@@ -582,12 +717,21 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							)}>
 							<Wallet size={18} />
 							<span className="flex-1 text-left">Keuangan</span>
-							{keuanganOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+							{keuanganOpen ? (
+								<ChevronDown size={14} />
+							) : (
+								<ChevronRight size={14} />
+							)}
 						</button>
 						{keuanganOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{keuanganItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -612,7 +756,12 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 						{hppOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{hppItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+									<SubNavLink
+										key={item.href}
+										{...item}
+										pathname={pathname}
+										onClose={closeMenu}
+									/>
 								))}
 							</div>
 						)}
@@ -625,7 +774,12 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 							Admin
 						</p>
 						{adminItems.map((item) => (
-							<NavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
+							<NavLink
+								key={item.href}
+								{...item}
+								pathname={pathname}
+								onClose={closeMenu}
+							/>
 						))}
 					</>
 				)}
@@ -678,7 +832,10 @@ export default function Sidebar({ overlayMode = false }: { overlayMode?: boolean
 			{/* Mobile overlay */}
 			{open && (
 				<div
-					className={cn("fixed inset-0 bg-black/30 z-40", !overlayMode && "lg:hidden")}
+					className={cn(
+						"fixed inset-0 bg-black/30 z-40",
+						!overlayMode && "lg:hidden",
+					)}
 					onClick={() => setOpen(false)}
 				/>
 			)}

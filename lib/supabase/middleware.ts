@@ -24,9 +24,14 @@ export async function updateSession(request: NextRequest) {
   const { data: { user }, error } = await supabase.auth.getUser()
 
   const isAuthPage = request.nextUrl.pathname.startsWith('/login')
-  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
+  // /tugas (spec 07) butuh proteksi yang sama seperti /dashboard — route
+  // terpisah dengan auth boundary sendiri (app/tugas/layout.tsx), bukan
+  // di bawah /dashboard, jadi harus didaftarkan eksplisit di sini juga.
+  const isProtected =
+    request.nextUrl.pathname.startsWith('/dashboard') ||
+    request.nextUrl.pathname.startsWith('/tugas')
 
-  if ((error || !user) && isDashboard) {
+  if ((error || !user) && isProtected) {
     // Hapus semua cookie Supabase yang mungkin corrupt agar tidak loop
     const redirect = NextResponse.redirect(new URL('/login', request.url))
     request.cookies.getAll().forEach(({ name }) => {

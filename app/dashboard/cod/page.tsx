@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { formatRupiah, formatDateOnly } from "@/lib/utils";
+import { logAktivitas } from "@/lib/aktivitas";
 import { Plus, X, Trash2, Wallet, Calendar, User, Info } from "lucide-react";
 
 const emptyForm = {
@@ -24,6 +25,7 @@ export default function CodPage() {
 	const [list, setList] = useState<any[]>([]);
 	const [petugasList, setPetugasList] = useState<any[]>([]);
 	const [estimasi, setEstimasi] = useState<Record<string, number>>({});
+	const [adaFallbackNama, setAdaFallbackNama] = useState(true);
 	const [loading, setLoading] = useState(true);
 	const [filterSopir, setFilterSopir] = useState("semua");
 	const [filterTanggal, setFilterTanggal] = useState({ dari: "", sampai: "" });
@@ -64,30 +66,36 @@ export default function CodPage() {
 		setLoading(false);
 	};
 
-	// Estimasi COD terkumpul per petugas — mencocokkan pengiriman.petugas_nama (text)
-	// terhadap nama profile, BUKAN link presisi (pengiriman tidak punya petugas_id).
-	// Ditandai jelas sebagai "Estimasi" di UI, bukan angka otoritatif.
+	// Estimasi COD terkumpul per petugas — utamakan match presisi lewat
+	// pengiriman.petugas_id; fallback pencocokan nama HANYA untuk baris
+	// petugas_id IS NULL (data lama/non-staf). Disclaimer "estimasi" di UI
+	// tetap dipertahankan selama masih ada baris fallback.
 	const loadEstimasi = async (petugas: any[]) => {
 		if (petugas.length === 0) {
 			setEstimasi({});
+			setAdaFallbackNama(false);
 			return;
 		}
 		const { data: bayar } = await supabase
 			.from("pengiriman_pembayaran")
-			.select("jumlah, pengiriman:pengiriman(petugas_nama)")
+			.select("jumlah, pengiriman:pengiriman(petugas_id, petugas_nama)")
 			.eq("metode", "cod");
 		const result: Record<string, number> = {};
 		for (const p of petugas) {
 			const nama = (p.name || "").trim().toLowerCase();
-			if (!nama) continue;
 			result[p.id] = (bayar || [])
-				.filter(
-					(b: any) =>
-						(b.pengiriman?.petugas_nama || "").trim().toLowerCase() === nama,
-				)
+				.filter((b: any) => {
+					const pengiriman = b.pengiriman as any;
+					if (pengiriman?.petugas_id) return pengiriman.petugas_id === p.id;
+					if (!nama) return false;
+					return (pengiriman?.petugas_nama || "").trim().toLowerCase() === nama;
+				})
 				.reduce((s: number, b: any) => s + Number(b.jumlah), 0);
 		}
 		setEstimasi(result);
+		setAdaFallbackNama(
+			(bayar || []).some((b: any) => !(b.pengiriman as any)?.petugas_id),
+		);
 	};
 
 	const openForm = () => {
@@ -134,9 +142,24 @@ export default function CodPage() {
 		loadAll();
 	};
 
-	const hapusSetoran = async (id: string) => {
+	const hapusSetoran = async (s: any) => {
 		if (!confirm("Yakin hapus catatan setoran ini?")) return;
-		await supabase.from("cod_setoran").delete().eq("id", id);
+		const { error } = await supabase.from("cod_setoran").delete().eq("id", s.id);
+		if (error) return;
+
+		await logAktivitas(supabase, {
+			aksi: "hapus_setoran_cod",
+			entitas: "cod_setoran",
+			entitas_id: s.id,
+			ref: s.sopir?.name || null,
+			detail: {
+				jumlah: s.jumlah,
+				sopir_id: s.sopir_id,
+				tanggal_setor: s.tanggal_setor,
+			},
+			created_by: profile?.id,
+		});
+
 		loadAll();
 	};
 
@@ -167,14 +190,17 @@ export default function CodPage() {
 				)}
 			</div>
 
-			<div className="flex items-start gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm mb-6">
-				<Info size={15} className="mt-0.5 flex-shrink-0" />
-				<p>
-					&quot;Estimasi COD Terkumpul&quot; dihitung dari pencocokan nama petugas
-					di data pengiriman — bukan angka final/otoritatif. Gunakan sebagai
-					referensi kasar, bukan dasar audit.
-				</p>
-			</div>
+			{adaFallbackNama && (
+				<div className="flex items-start gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm mb-6">
+					<Info size={15} className="mt-0.5 flex-shrink-0" />
+					<p>
+						&quot;Estimasi COD Terkumpul&quot; sebagian masih dihitung dari
+						pencocokan nama petugas (baris pengiriman lama tanpa petugas
+						terdaftar) — bukan angka final/otoritatif untuk baris tsb. Kiriman
+						dengan petugas terdaftar sudah dihitung presisi lewat ID.
+					</p>
+				</div>
+			)}
 
 			{/* Kartu ringkasan per petugas */}
 			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
@@ -315,7 +341,7 @@ export default function CodPage() {
 									)}
 									{canEditDeleteSetoran && (
 										<button
-											onClick={() => hapusSetoran(s.id)}
+											onClick={() => hapusSetoran(s)}
 											className="p-2 hover:bg-red-50 rounded-lg text-red-500 transition"
 											title="Hapus">
 											<Trash2 size={14} />
