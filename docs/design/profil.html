@@ -1,0 +1,366 @@
+<!doctype html>
+
+<html lang="id">
+	<head>
+		<meta charset="utf-8" />
+		<meta
+			content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+			name="viewport" />
+		<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+			rel="stylesheet" />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+			rel="stylesheet" />
+		<link
+			href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@100..900&display=swap"
+			rel="stylesheet" />
+		<style>
+			.material-symbols-outlined {
+				font-variation-settings:
+					"FILL" 0,
+					"wght" 400,
+					"GRAD" 0,
+					"opsz" 24;
+			}
+			body {
+				-webkit-tap-highlight-color: transparent;
+				font-family: "Plus Jakarta Sans", sans-serif;
+				background-color: #faf7f2; /* Base Layer from Style Guidance */
+			}
+			.glass-effect {
+				backdrop-filter: blur(8px);
+				background: rgba(255, 255, 255, 0.8);
+			}
+		</style>
+		<script id="tailwind-config">
+			tailwind.config = {
+				darkMode: "class",
+				theme: {
+					extend: {
+						colors: {
+							"on-secondary-fixed-variant": "#474743",
+							background: "#FAF7F2",
+							"primary-fixed": "#ffdbca",
+							primary: "#9d4300",
+							"inverse-surface": "#27313f",
+							"surface-container-lowest": "#ffffff",
+							"surface-container-high": "#dee9fc",
+							"primary-container": "#f97316",
+							"on-primary-fixed-variant": "#783200",
+							"on-primary-fixed": "#341100",
+							"on-surface": "#121c2a",
+							"surface-variant": "#d9e3f6",
+							outline: "#8c7164",
+							"surface-container": "#e6eeff",
+							secondary: "#5f5e5b",
+							"inverse-on-surface": "#eaf1ff",
+							"surface-tint": "#9d4300",
+							"inverse-primary": "#ffb690",
+							"secondary-fixed-dim": "#c8c6c2",
+							"on-error-container": "#93000a",
+							tertiary: "#665d54",
+							"on-background": "#121c2a",
+							"on-primary-container": "#582200",
+							"tertiary-fixed": "#eee0d5",
+							"tertiary-fixed-dim": "#d1c4ba",
+							"on-secondary-fixed": "#1c1c19",
+							"on-tertiary-container": "#38312a",
+							"on-secondary-container": "#656461",
+							"primary-fixed-dim": "#ffb690",
+							"tertiary-container": "#a4988f",
+							surface: "#f8f9ff",
+							"surface-bright": "#f8f9ff",
+							"outline-variant": "#e0c0b1",
+							"surface-container-low": "#eff4ff",
+							"on-primary": "#ffffff",
+							"on-tertiary-fixed-variant": "#4e453e",
+							"secondary-container": "#e5e2dd",
+							"surface-container-highest": "#d9e3f6",
+							"on-tertiary-fixed": "#211a14",
+							"error-container": "#ffdad6",
+							"secondary-fixed": "#e5e2dd",
+							"on-error": "#ffffff",
+							"on-surface-variant": "#584237",
+							"on-secondary": "#ffffff",
+							"on-tertiary": "#ffffff",
+							error: "#ba1a1a",
+							"surface-dim": "#d0dbed",
+						},
+						borderRadius: {
+							DEFAULT: "0.25rem",
+							lg: "0.5rem",
+							xl: "0.75rem",
+							full: "9999px",
+						},
+						spacing: {
+							"stack-gap": "16px",
+							"inline-gap": "12px",
+							"section-margin": "24px",
+							"grid-mobile": "390px",
+							"container-padding": "20px",
+						},
+						fontFamily: {
+							display: ["Plus Jakarta Sans"],
+							"body-md": ["Plus Jakarta Sans"],
+							headline: ["Plus Jakarta Sans"],
+							"label-md": ["Plus Jakarta Sans"],
+							caption: ["Plus Jakarta Sans"],
+							"title-lg": ["Plus Jakarta Sans"],
+							"number-md": ["Plus Jakarta Sans"],
+							"body-lg": ["Plus Jakarta Sans"],
+						},
+						fontSize: {
+							display: [
+								"24px",
+								{
+									lineHeight: "32px",
+									letterSpacing: "-0.02em",
+									fontWeight: "600",
+								},
+							],
+							"body-md": ["15px", { lineHeight: "24px", fontWeight: "400" }],
+							headline: [
+								"20px",
+								{
+									lineHeight: "28px",
+									letterSpacing: "-0.01em",
+									fontWeight: "600",
+								},
+							],
+							"label-md": ["14px", { lineHeight: "20px", fontWeight: "500" }],
+							caption: ["12px", { lineHeight: "16px", fontWeight: "400" }],
+							"title-lg": ["18px", { lineHeight: "24px", fontWeight: "600" }],
+							"number-md": ["16px", { lineHeight: "24px", fontWeight: "500" }],
+							"body-lg": ["16px", { lineHeight: "26px", fontWeight: "400" }],
+						},
+					},
+				},
+			};
+		</script>
+	</head>
+	<body class="bg-background min-h-screen pb-24">
+		<!-- TopAppBar -->
+		<header
+			class="bg-surface dark:bg-surface-dim w-full sticky top-0 z-40 border-b border-outline-variant dark:border-outline h-16 flex items-center justify-between px-section-margin">
+			<div class="flex items-center gap-4">
+				<button class="active:opacity-80 transition-opacity">
+					<span
+						class="material-symbols-outlined text-primary-container"
+						data-icon="arrow_back"
+						>arrow_back</span
+					>
+				</button>
+				<h1 class="font-headline text-headline text-on-surface">Profil</h1>
+			</div>
+			<button
+				class="active:opacity-80 transition-opacity p-2 hover:bg-surface-container-low transition-colors rounded-full">
+				<span
+					class="material-symbols-outlined text-secondary"
+					data-icon="settings"
+					>settings</span
+				>
+			</button>
+		</header>
+		<main class="px-container-padding pt-6 space-y-stack-gap">
+			<!-- Profile Header Section -->
+			<section class="flex flex-col items-center justify-center py-4 space-y-4">
+				<div class="relative">
+					<div
+						class="w-24 h-24 rounded-full border-4 border-white shadow-sm overflow-hidden bg-surface-container">
+						<img
+							class="w-full h-full object-cover"
+							data-alt="A professional studio headshot of a friendly Indonesian man named Budi Santoso, featuring warm lighting and a soft neutral background. The style is clean, modern, and trustworthy, matching a premium logistics service aesthetic with subtle orange and white tones."
+							src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6XnJvYNplxDIKYEpVSkK5j2KD0WNibcPfiXDkzFEtuFZL92JnWfqIeMJtrME2detX5uWETzAudPqpY024eOz9MLcAbuxvzBvjBlSquo6teigmWxlpBMjB6C9f5-5TjwEBTKC2nK7FbSL3KAhMnOTSAZWMRgGwbRLYlgb9e710crH9RubACGttmBkNFwvcs9Aorcv3NaHYsS-fd2Pl0fZY0ng6D-Ms3XkA1WOj3PZO33qRhz3Yveo1" />
+					</div>
+					<div
+						class="absolute bottom-0 right-0 bg-primary-container text-white p-1.5 rounded-full border-2 border-white shadow-sm">
+						<span class="material-symbols-outlined text-[16px]" data-icon="edit"
+							>edit</span
+						>
+					</div>
+				</div>
+				<div class="text-center">
+					<h2 class="font-title-lg text-title-lg text-on-surface">
+						Budi Santoso
+					</h2>
+					<p class="font-body-md text-body-md text-secondary">
+						+62 812-3456-7890
+					</p>
+				</div>
+			</section>
+			<!-- Statistics Bento Card -->
+			<section
+				class="bg-white rounded-xl p-5 shadow-[0px_4px_12px_rgba(31,41,55,0.04)] border border-[#F0E9E0]">
+				<div class="grid grid-cols-3 divide-x divide-outline-variant">
+					<div class="flex flex-col items-center">
+						<span class="font-number-md text-number-md text-primary-container"
+							>3</span
+						>
+						<span class="font-caption text-caption text-secondary">Aktif</span>
+					</div>
+					<div class="flex flex-col items-center">
+						<span class="font-number-md text-number-md text-primary-container"
+							>24</span
+						>
+						<span class="font-caption text-caption text-secondary"
+							>Selesai</span
+						>
+					</div>
+					<div class="flex flex-col items-center">
+						<span class="font-number-md text-number-md text-primary-container"
+							>1</span
+						>
+						<span class="font-caption text-caption text-secondary">Batal</span>
+					</div>
+				</div>
+			</section>
+			<!-- Menu List Card -->
+			<nav
+				class="bg-white rounded-xl shadow-[0px_4px_12px_rgba(31,41,55,0.04)] border border-[#F0E9E0] overflow-hidden">
+				<a
+					class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors active:opacity-80"
+					href="#">
+					<div class="flex items-center gap-4">
+						<div
+							class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary-container">
+							<span class="material-symbols-outlined" data-icon="person"
+								>person</span
+							>
+						</div>
+						<span class="font-label-md text-label-md text-on-surface"
+							>Edit Profil</span
+						>
+					</div>
+					<span
+						class="material-symbols-outlined text-secondary opacity-40"
+						data-icon="chevron_right"
+						>chevron_right</span
+					>
+				</a>
+				<div class="h-[1px] bg-[#F0E9E0] mx-4"></div>
+				<a
+					class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors active:opacity-80"
+					href="#">
+					<div class="flex items-center gap-4">
+						<div
+							class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary-container">
+							<span class="material-symbols-outlined" data-icon="location_on"
+								>location_on</span
+							>
+						</div>
+						<span class="font-label-md text-label-md text-on-surface"
+							>Alamat Tersimpan</span
+						>
+					</div>
+					<span
+						class="material-symbols-outlined text-secondary opacity-40"
+						data-icon="chevron_right"
+						>chevron_right</span
+					>
+				</a>
+				<div class="h-[1px] bg-[#F0E9E0] mx-4"></div>
+				<a
+					class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors active:opacity-80"
+					href="#">
+					<div class="flex items-center gap-4">
+						<div
+							class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary-container">
+							<span class="material-symbols-outlined" data-icon="help_outline"
+								>help_outline</span
+							>
+						</div>
+						<span class="font-label-md text-label-md text-on-surface"
+							>Pusat Bantuan</span
+						>
+					</div>
+					<span
+						class="material-symbols-outlined text-secondary opacity-40"
+						data-icon="chevron_right"
+						>chevron_right</span
+					>
+				</a>
+				<div class="h-[1px] bg-[#F0E9E0] mx-4"></div>
+				<a
+					class="flex items-center justify-between p-4 hover:bg-surface-container-low transition-colors active:opacity-80"
+					href="#">
+					<div class="flex items-center gap-4">
+						<div
+							class="w-10 h-10 rounded-full bg-surface-container-low flex items-center justify-center text-primary-container">
+							<span class="material-symbols-outlined" data-icon="description"
+								>description</span
+							>
+						</div>
+						<span class="font-label-md text-label-md text-on-surface"
+							>Syarat & Ketentuan</span
+						>
+					</div>
+					<span
+						class="material-symbols-outlined text-secondary opacity-40"
+						data-icon="chevron_right"
+						>chevron_right</span
+					>
+				</a>
+			</nav>
+			<!-- Logout Action -->
+			<div class="pt-4 px-2">
+				<button
+					class="w-full flex items-center justify-center gap-2 p-4 text-error font-label-md text-label-md active:scale-95 transition-transform">
+					<span class="material-symbols-outlined" data-icon="logout"
+						>logout</span
+					>
+					Keluar
+				</button>
+			</div>
+			<!-- Version Info -->
+			<div class="text-center py-4">
+				<p class="font-caption text-caption text-secondary opacity-50 italic">
+					Versi 2.4.0 (Build 120)
+				</p>
+			</div>
+		</main>
+		<!-- BottomNavBar -->
+		<nav
+			class="fixed bottom-0 w-full z-50 h-[80px] bg-surface dark:bg-surface-dim border-t border-outline-variant shadow-[0px_-4px_12px_rgba(31,41,55,0.04)] flex justify-around items-center px-container-padding pb-safe">
+			<a
+				class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:text-primary-container transition-colors active:scale-95 transition-transform duration-200"
+				href="#">
+				<span class="material-symbols-outlined" data-icon="home">home</span>
+				<span class="font-label-md text-label-md">Beranda</span>
+			</a>
+			<a
+				class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim hover:text-primary-container transition-colors active:scale-95 transition-transform duration-200"
+				href="#">
+				<span class="material-symbols-outlined" data-icon="local_shipping"
+					>local_shipping</span
+				>
+				<span class="font-label-md text-label-md">Pesanan</span>
+			</a>
+			<a
+				class="flex flex-col items-center justify-center text-primary-container dark:text-inverse-primary relative after:content-[''] after:w-1 after:h-1 after:bg-primary-container after:rounded-full after:mt-1 active:scale-95 transition-transform duration-200"
+				href="#">
+				<span
+					class="material-symbols-outlined"
+					data-icon="person"
+					data-weight="fill"
+					>person</span
+				>
+				<span class="font-label-md text-label-md">Profil</span>
+			</a>
+		</nav>
+		<script>
+			// Micro-interaction for list items
+			document.querySelectorAll("a").forEach((item) => {
+				item.addEventListener("touchstart", () => {
+					item.style.backgroundColor = "#FAF7F2";
+				});
+				item.addEventListener("touchend", () => {
+					setTimeout(() => {
+						item.style.backgroundColor = "";
+					}, 100);
+				});
+			});
+		</script>
+	</body>
+</html>

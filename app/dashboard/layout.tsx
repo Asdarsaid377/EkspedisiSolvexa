@@ -1,15 +1,13 @@
 'use client'
 
 import { useAuth } from '@/contexts/AuthContext'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 import Sidebar from '@/components/Sidebar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
   const router = useRouter()
-  const pathname = usePathname()
-  const isPOS = pathname?.startsWith('/dashboard/pos')
 
   useEffect(() => {
     if (!loading && !user) router.push('/login')
@@ -30,9 +28,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <Sidebar overlayMode={isPOS} />
-      <main className={isPOS ? 'min-h-screen' : 'lg:ml-64 min-h-screen'}>
-        <div className={isPOS ? 'p-4 lg:p-8 pt-16' : 'p-4 lg:p-8 pt-16 lg:pt-8'}>
+      <Sidebar />
+      <main className="lg:ml-64 min-h-screen">
+        <div className="p-4 lg:p-8 pt-16 lg:pt-8">
           {children}
         </div>
       </main>

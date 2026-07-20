@@ -3,8 +3,21 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { Plus_Jakarta_Sans } from "next/font/google";
 import { LogOut, Package, Plus, User as UserIcon } from "lucide-react";
 import { BookingAuthProvider, useBookingAuth } from "@/contexts/BookingAuthContext";
+import { cn } from "@/lib/utils";
+
+// Font khusus /booking/* (redesain Stitch, 20 Jul 2026) — SCOPED ke route
+// ini lewat CSS variable, TIDAK menyentuh font global app/layout.tsx yang
+// dipakai dashboard/tugas. `--font-booking` dikonsumsi oleh
+// `fontFamily.booking` di tailwind.config.js.
+const plusJakartaSans = Plus_Jakarta_Sans({
+	subsets: ["latin"],
+	weight: ["400", "500", "600", "700", "800"],
+	variable: "--font-booking",
+	fallback: ["Inter", "system-ui", "sans-serif"],
+});
 
 // Layout khusus /booking — TANPA Sidebar, mobile-first (pola sama
 // app/tugas/layout.tsx), tapi auth boundary-nya beda sumber total: bukan
@@ -39,7 +52,11 @@ function BookingLayoutInner({ children }: { children: React.ReactNode }) {
 
 	if (loading) {
 		return (
-			<div className="min-h-screen flex items-center justify-center bg-gray-50">
+			<div
+				className={cn(
+					plusJakartaSans.variable,
+					"font-booking min-h-screen flex items-center justify-center bg-gray-50",
+				)}>
 				<div className="text-center">
 					<div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
 					<p className="text-gray-500 text-sm">Memuat...</p>
@@ -53,11 +70,15 @@ function BookingLayoutInner({ children }: { children: React.ReactNode }) {
 	if (customer && isPublicPath) return null;
 
 	if (isPublicPath) {
-		return <>{children}</>;
+		return (
+			<div className={cn(plusJakartaSans.variable, "font-booking")}>
+				{children}
+			</div>
+		);
 	}
 
 	return (
-		<div className="min-h-screen bg-gray-50">
+		<div className={cn(plusJakartaSans.variable, "font-booking min-h-screen bg-gray-50")}>
 			<header className="sticky top-0 z-40 bg-white border-b border-gray-100 px-4 py-3 flex items-center justify-between">
 				<div className="min-w-0">
 					<p className="text-sm font-semibold text-gray-900 truncate">

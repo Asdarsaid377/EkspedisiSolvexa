@@ -3,9 +3,24 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Package, Eye, EyeOff } from "lucide-react";
+import { Truck, Eye, EyeOff, User, Lock, ArrowRight } from "lucide-react";
 import { useBookingAuth } from "@/contexts/BookingAuthContext";
+import BookingButton from "@/components/booking/BookingButton";
+import BookingInput from "@/components/booking/BookingInput";
 
+// Restyle Stitch (login.png) — logika di bawah ini IDENTIK dengan versi
+// sebelum restyling: field email/password, fetch ke /api/booking-auth/login,
+// redirect ke /booking setelah sukses. TIDAK ADA perubahan handler/validasi.
+//
+// Penyesuaian sengaja dari mockup (bukan restyling murni, dicatat karena
+// menyimpang dari .png):
+// - Label field tetap "Email" (bukan "Nomor Telepon atau Email" seperti
+//   mockup) — /api/booking-auth/login cuma mencari berdasarkan kolom
+//   email, tidak ada lookup berdasarkan nomor telepon sama sekali.
+// - "Lupa Kata Sandi?" TIDAK diimplementasikan — tidak ada alur reset
+//   password (lihat CLAUDE.md §Business Logic "Booking Mandiri").
+// - Tombol "Google"/"Facebook" TIDAK diimplementasikan — auth booking
+//   mandiri sengaja 100% terpisah dari provider OAuth apapun (spec 10 §2).
 export default function BookingLoginPage() {
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
@@ -41,70 +56,73 @@ export default function BookingLoginPage() {
 	};
 
 	return (
-		<div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-			<div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-8">
-				<div className="text-center mb-8">
-					<div className="inline-flex items-center justify-center w-16 h-16 bg-indigo-100 rounded-2xl mb-4">
-						<Package className="w-8 h-8 text-indigo-600" />
-					</div>
-					<h1 className="text-2xl font-bold text-gray-900">Booking Mandiri</h1>
-					<p className="text-gray-500 mt-1">Masuk ke akun pengiriman Anda</p>
+		<div className="min-h-screen bg-booking-surface">
+			<div className="bg-gradient-to-b from-booking-tint to-booking-surface px-6 pt-12 pb-8 text-center">
+				<div className="flex items-center justify-center gap-2">
+					<Truck className="text-booking-primary" size={24} strokeWidth={2.5} />
+					<span className="text-xl font-extrabold text-booking-primary">
+						Ekspedisi
+					</span>
 				</div>
+			</div>
 
-				<form onSubmit={handleLogin} className="space-y-4">
-					<div>
-						<label className="block text-sm font-medium text-gray-700 mb-1">
-							Email
-						</label>
-						<input
-							type="email"
-							value={email}
-							onChange={(e) => setEmail(e.target.value)}
-							required
-							className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition"
-							placeholder="email@anda.com"
-						/>
-					</div>
-					<div>
-						<label className="block text-sm font-medium text-gray-700 mb-1">
-							Password
-						</label>
-						<div className="relative">
-							<input
-								type={showPassword ? "text" : "password"}
-								value={password}
-								onChange={(e) => setPassword(e.target.value)}
-								required
-								className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition pr-12"
-								placeholder="••••••••"
-							/>
+			<div className="max-w-md mx-auto px-6 pb-10">
+				<h1 className="text-2xl font-bold text-booking-text">Masuk ke Akun</h1>
+				<p className="mt-1 text-sm text-booking-muted">
+					Silakan masukkan detail akun Anda untuk melanjutkan pengiriman.
+				</p>
+
+				<form onSubmit={handleLogin} className="mt-6 space-y-4">
+					<BookingInput
+						label="Email"
+						type="email"
+						value={email}
+						onChange={(e) => setEmail(e.target.value)}
+						required
+						placeholder="Contoh: nama@email.com"
+						leftIcon={<User size={18} />}
+					/>
+					<BookingInput
+						label="Kata Sandi"
+						type={showPassword ? "text" : "password"}
+						value={password}
+						onChange={(e) => setPassword(e.target.value)}
+						required
+						placeholder="••••••••"
+						leftIcon={<Lock size={18} />}
+						rightElement={
 							<button
 								type="button"
 								onClick={() => setShowPassword(!showPassword)}
-								className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+								className="text-booking-muted hover:text-booking-text">
 								{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
 							</button>
-						</div>
-					</div>
+						}
+					/>
 
 					{error && (
-						<div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">
+						<div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-600">
 							{error}
 						</div>
 					)}
 
-					<button
-						type="submit"
-						disabled={loading}
-						className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-semibold py-3 rounded-xl transition">
-						{loading ? "Memproses..." : "Masuk"}
-					</button>
+					<BookingButton type="submit" loading={loading}>
+						{loading ? (
+							"Memproses..."
+						) : (
+							<>
+								Masuk <ArrowRight size={16} />
+							</>
+						)}
+					</BookingButton>
 				</form>
 
-				<p className="text-center text-sm text-gray-500 mt-6">
+				<p className="mt-6 text-center text-sm text-booking-muted">
 					Belum punya akun?{" "}
-					<Link href="/booking/register" className="text-indigo-600 font-medium hover:underline">
-						Daftar
+					<Link
+						href="/booking/register"
+						className="font-semibold text-booking-primary hover:underline">
+						Daftar Sekarang
 					</Link>
 				</p>
 			</div>

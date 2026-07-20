@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+
+<html lang="id"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Daftar Akun Baru - Ekspedisi</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-error": "#ffffff",
+                    "primary-container": "#f97316",
+                    "outline": "#8c7164",
+                    "inverse-on-surface": "#eaf1ff",
+                    "surface-dim": "#d0dbed",
+                    "secondary-fixed": "#e5e2dd",
+                    "tertiary": "#665d54",
+                    "surface-container-lowest": "#ffffff",
+                    "surface-container-low": "#eff4ff",
+                    "surface": "#f8f9ff",
+                    "on-secondary": "#ffffff",
+                    "background": "#f8f9ff",
+                    "on-primary-fixed": "#341100",
+                    "on-surface-variant": "#584237",
+                    "inverse-surface": "#27313f",
+                    "surface-container-high": "#dee9fc",
+                    "secondary-container": "#e5e2dd",
+                    "surface-container-highest": "#d9e3f6",
+                    "on-primary": "#ffffff",
+                    "tertiary-container": "#a4988f",
+                    "inverse-primary": "#ffb690",
+                    "surface-container": "#e6eeff",
+                    "on-tertiary-container": "#38312a",
+                    "surface-tint": "#9d4300",
+                    "on-primary-container": "#582200",
+                    "on-background": "#121c2a",
+                    "on-tertiary-fixed-variant": "#4e453e",
+                    "primary-fixed": "#ffdbca",
+                    "on-secondary-container": "#656461",
+                    "primary-fixed-dim": "#ffb690",
+                    "tertiary-fixed": "#eee0d5",
+                    "primary": "#9d4300",
+                    "on-tertiary-fixed": "#211a14",
+                    "error": "#ba1a1a",
+                    "on-primary-fixed-variant": "#783200",
+                    "outline-variant": "#e0c0b1",
+                    "error-container": "#ffdad6",
+                    "on-surface": "#121c2a",
+                    "tertiary-fixed-dim": "#d1c4ba",
+                    "surface-variant": "#d9e3f6",
+                    "surface-bright": "#f8f9ff",
+                    "on-error-container": "#93000a",
+                    "secondary": "#5f5e5b",
+                    "on-tertiary": "#ffffff",
+                    "on-secondary-fixed": "#1c1c19",
+                    "on-secondary-fixed-variant": "#474743",
+                    "secondary-fixed-dim": "#c8c6c2"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "inline-gap": "12px",
+                    "container-padding": "20px",
+                    "stack-gap": "16px",
+                    "grid-mobile": "390px",
+                    "section-margin": "24px"
+            },
+            "fontFamily": {
+                    "label-md": ["Plus Jakarta Sans"],
+                    "body-md": ["Plus Jakarta Sans"],
+                    "headline": ["Plus Jakarta Sans"],
+                    "display": ["Plus Jakarta Sans"],
+                    "caption": ["Plus Jakarta Sans"],
+                    "title-lg": ["Plus Jakarta Sans"],
+                    "number-md": ["Plus Jakarta Sans"],
+                    "body-lg": ["Plus Jakarta Sans"]
+            },
+            "fontSize": {
+                    "label-md": ["14px", {"lineHeight": "20px", "fontWeight": "500"}],
+                    "body-md": ["15px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline": ["20px", {"lineHeight": "28px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                    "display": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.02em", "fontWeight": "600"}],
+                    "caption": ["12px", {"lineHeight": "16px", "fontWeight": "400"}],
+                    "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                    "number-md": ["16px", {"lineHeight": "24px", "fontWeight": "500"}],
+                    "body-lg": ["16px", {"lineHeight": "26px", "fontWeight": "400"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            background-color: #FAF7F2;
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .input-filled {
+            background-color: #FAF7F2;
+            transition: all 0.2s ease-in-out;
+        }
+        .input-filled:focus {
+            background-color: #FAF7F2;
+            outline: none;
+            box-shadow: 0 0 0 1.5px #F97316;
+        }
+        .pill-button {
+            transition: transform 0.1s active;
+        }
+        .pill-button:active {
+            transform: scale(0.98);
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-start min-h-screen">
+<!-- Top App Bar -->
+<header class="w-full top-0 sticky z-50 bg-white shadow-sm">
+<div class="flex items-center justify-between px-container-padding h-16 w-full max-w-grid-mobile mx-auto">
+<button class="active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-on-surface-variant">arrow_back</span>
+</button>
+<div class="font-headline text-headline font-bold text-primary">Ekspedisi</div>
+<div class="w-6"></div> <!-- Spacer for centering -->
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="w-full max-w-grid-mobile flex flex-col px-container-padding pt-8 pb-12 bg-white flex-grow shadow-sm">
+<!-- Welcome Header -->
+<div class="mb-section-margin">
+<h1 class="font-display text-display text-on-surface mb-2">Daftar Akun Baru</h1>
+<p class="font-body-md text-body-md text-on-surface-variant">Mulai kelola pengiriman logistik Anda dengan lebih efisien dan aman.</p>
+</div>
+<!-- Registration Form -->
+<form class="flex flex-col gap-stack-gap">
+<!-- Full Name -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="name">Nama Lengkap</label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-xl input-filled border-none text-on-surface placeholder:text-outline-variant font-body-md" id="name" placeholder="Masukkan nama lengkap Anda" type="text"/>
+</div>
+</div>
+<!-- Phone Number -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="phone">Nomor Telepon</label>
+<div class="relative flex">
+<div class="absolute left-4 top-1/2 -translate-y-1/2 flex items-center gap-2 border-r border-outline-variant pr-3">
+<span class="font-label-md text-on-surface-variant">+62</span>
+</div>
+<input class="w-full h-12 pl-16 pr-4 rounded-xl input-filled border-none text-on-surface placeholder:text-outline-variant font-body-md" id="phone" placeholder="812 3456 7890" type="tel"/>
+</div>
+</div>
+<!-- Password -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="password">Kata Sandi</label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-xl input-filled border-none text-on-surface placeholder:text-outline-variant font-body-md" id="password" placeholder="Minimal 8 karakter" type="password"/>
+<button class="absolute right-4 top-1/2 -translate-y-1/2 text-on-surface-variant" type="button">
+<span class="material-symbols-outlined text-[20px]">visibility_off</span>
+</button>
+</div>
+</div>
+<!-- Confirm Password -->
+<div class="flex flex-col gap-1.5">
+<label class="font-label-md text-label-md text-on-surface" for="confirm-password">Konfirmasi Kata Sandi</label>
+<div class="relative">
+<input class="w-full h-12 px-4 rounded-xl input-filled border-none text-on-surface placeholder:text-outline-variant font-body-md" id="confirm-password" placeholder="Ulangi kata sandi" type="password"/>
+</div>
+</div>
+<!-- Terms & Conditions Checkbox -->
+<div class="flex items-start gap-3 mt-2">
+<div class="pt-1">
+<input class="w-5 h-5 rounded border-outline-variant text-primary focus:ring-primary focus:ring-offset-0 bg-surface" id="terms" type="checkbox"/>
+</div>
+<label class="font-caption text-caption text-on-surface-variant leading-tight" for="terms">
+                    Saya setuju dengan <span class="text-primary font-medium hover:underline">Syarat &amp; Ketentuan</span> serta <span class="text-primary font-medium hover:underline">Kebijakan Privasi</span> yang berlaku.
+                </label>
+</div>
+<!-- Primary Action Button -->
+<div class="mt-4">
+<button class="w-full h-14 bg-primary-container text-white font-label-md rounded-full shadow-lg shadow-primary-container/20 active:scale-[0.97] transition-all hover:bg-primary" type="submit">
+                    Daftar
+                </button>
+</div>
+</form>
+<!-- Social Register Divider -->
+<div class="flex items-center gap-4 my-8">
+<div class="flex-grow h-[1px] bg-outline-variant/30"></div>
+<span class="font-caption text-caption text-outline-variant">Atau daftar dengan</span>
+<div class="flex-grow h-[1px] bg-outline-variant/30"></div>
+</div>
+<!-- Social Buttons -->
+<div class="flex gap-4">
+<button class="flex-1 flex items-center justify-center gap-2 h-12 border border-outline-variant rounded-xl hover:bg-surface transition-colors">
+<img alt="Google" class="w-5 h-5" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAlx0WGHMxp6vMTwxOfOb_sQw9iexEQp-kJPYHEcsUPsifDZ6OgRzr0Lcv2nNxtoQvUmG0rgYJLhCDLkHHkt5ofuK37UZN66pm1iuM3_tjaxl0PSXuyVqVuEAyKXA0KSVIOAs2Kx3wNM-FxqcZSgzNCCYt1nTl3Tez2f4oMxORqHoFFmz66Qhf2pwb1MBaT5NLHFzgYJjfnoCUcTxWOVhP2Tx_Y1HT6o2pP69D_eggUyFKCLghIEfhn"/>
+<span class="font-label-md text-on-surface">Google</span>
+</button>
+<button class="flex-1 flex items-center justify-center gap-2 h-12 border border-outline-variant rounded-xl hover:bg-surface transition-colors">
+<span class="material-symbols-outlined text-[#1877F2]">face_nod</span>
+<span class="font-label-md text-on-surface">Facebook</span>
+</button>
+</div>
+<!-- Footer Footer -->
+<div class="mt-auto pt-10 text-center">
+<p class="font-body-md text-body-md text-on-surface-variant">
+                Sudah punya akun? <a class="text-primary font-semibold hover:underline" href="#">Masuk</a>
+</p>
+</div>
+</main>
+<!-- Illustrative Detail (Optional but adds premium feel) -->
+<div class="fixed bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary-container via-primary to-primary-container opacity-20 pointer-events-none"></div>
+<script>
+        // Simple micro-interaction for password visibility
+        document.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const icon = btn.querySelector('.material-symbols-outlined');
+                if (icon && (icon.innerText === 'visibility_off' || icon.innerText === 'visibility')) {
+                    const input = btn.previousElementSibling;
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.innerText = 'visibility';
+                    } else {
+                        input.type = 'password';
+                        icon.innerText = 'visibility_off';
+                    }
+                }
+            });
+        });
+
+        // Form submission prevent default for demo
+        document.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            // Trigger haptic feedback or transition
+            const btn = e.target.querySelector('button[type="submit"]');
+            btn.innerHTML = '<span class="material-symbols-outlined animate-spin">progress_activity</span>';
+            setTimeout(() => {
+                btn.innerHTML = 'Berhasil Terdaftar';
+                btn.classList.replace('bg-primary-container', 'bg-green-600');
+            }, 1500);
+        });
+    </script>
+</body></html>

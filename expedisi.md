@@ -66,20 +66,29 @@ selesai, dan mengelola keuangan (termasuk COD) terkait.
 
 ### 3.1 Tetap dipakai / direpurpose dari sistem lama
 
+> **Status per Fase 17 (20 Jul 2026)**: baris "Meja Kerja Owner",
+> "Laporan Wilayah", dan "Kritik & Saran" di bawah adalah snapshot
+> RENCANA AWAL (pra-pivot) — ketiganya akhirnya tetap DIHAPUS PERMANEN
+> di Fase 17 begitu 2 pengecualian Fase 16 (Penjualan/POS) yang
+> menopangnya ikut dihapus (lihat §7 poin 17). Baris tabel dibiarkan apa
+> adanya di bawah sebagai jejak historis keputusan — jangan dibaca
+> sebagai status modul saat ini.
+
 | Modul lama | Status | Catatan |
 |---|---|---|
 | Absensi Karyawan | Tetap | Sudah generic, tinggal pakai untuk staf & sopir expedisi |
-| Meja Kerja Owner | Tetap | Reminder, monitoring — generic ke bisnis apapun |
-| Keuangan (workspace, laporan, pengeluaran) | Tetap | Generic, tinggal sesuaikan kategori pengeluaran |
+| Meja Kerja Owner | ~~Tetap~~ Dihapus Fase 17 | Reminder, monitoring — generic ke bisnis apapun, tapi tidak ada yang pakai lagi |
+| Keuangan (workspace, laporan, pengeluaran) | Tetap (laporan/pengeluaran expedisi), workspace lama dihapus Fase 17 | Generic, tinggal sesuaikan kategori pengeluaran |
 | Laporan Sopir | Tetap, diperluas | Sudah cocok, akan jadi laporan performa kurir/sopir |
-| Laporan Wilayah | Tetap, diperluas | Cocok untuk laporan per zona/rute pengiriman |
-| Kritik & Saran | Tetap | Generic complaint/review |
+| Laporan Wilayah | ~~Tetap, diperluas~~ Dihapus Fase 17 | Cocok untuk laporan per zona/rute pengiriman, tapi tidak pernah direalisasikan |
+| Kritik & Saran | ~~Tetap~~ Dihapus Fase 17 | Generic complaint/review, tidak ada padanan aktif untuk `pengiriman` |
 | Pengguna (role management) | Tetap | Role list perlu diubah, lihat §4 |
 | `nomor_resi` + milestone tracking + `/resi/[nomor]` | **Fondasi utama** | Ini paling dekat dengan kebutuhan expedisi — tinggal generalisasi dari "tracking penjualan produk" jadi "tracking pengiriman apapun" |
-| Penjualan (invoice, split payment, pelunasan) | Direfactor jadi `pengiriman` | Struktur bisnis (nomor_faktur, milestone, uang_dp, status_bayar) tetap relevan, tapi field-field terkait produk (harga_katalog, bonus reseller) tidak dipakai |
+| Penjualan (invoice, split payment, pelunasan) | Direfactor jadi `pengiriman`; arsip `/dashboard/penjualan` asli dihapus Fase 17 | Struktur bisnis (nomor_faktur, milestone, uang_dp, status_bayar) tetap relevan, tapi field-field terkait produk (harga_katalog, bonus reseller) tidak dipakai |
 
-### 3.2 Di-deprecate — ✅ DIHAPUS PERMANEN di Fase 16 (20 Jul 2026),
-kecuali 2 pengecualian eksplisit
+### 3.2 Di-deprecate — ✅ DIHAPUS PERMANEN (Fase 16: 20 Jul 2026, sebagian
+besar; Fase 17: 20 Jul 2026, sisa 2 pengecualian + 2 tabel owner — lihat
+catatan di bawah)
 
 **Dihapus permanen** (kode + tabel database, lihat §7 poin 16 untuk
 rincian & backup): Produk & Stok, Meja Kerja Gudang, Reseller +
@@ -91,23 +100,32 @@ Produk, Usia Barang, Laporan Tukang, seluruh modul **HPP Produksi**
 publik (`/katalog`, `/toko`, `/etalase`, `/produk/[id]`), landing page
 marketing furniture, reseller portal (`/r/[token]`), chat widget AI.
 
-**PENGECUALIAN — sengaja DIPERTAHANKAN** (bukan kelalaian): Kasir (POS)
-dan Penjualan (arsip, `/dashboard/penjualan`) TIDAK dihapus, karena
-keduanya bukan viewer read-only pasif — masih fitur create/edit penuh
-(termasuk "buat dari PO", foto produk, restore stok saat hapus item).
-Mempertahankan kedua halaman ini berarti 11 tabel intinya juga ikut
-dipertahankan: `produk`, `produk_foto`, `resellers`, `purchase_orders`,
-`purchase_order_items`, `mutasi_stok`, `penjualan`, `penjualan_item`,
-`penjualan_pembayaran`, `reseller_reviews`, `tracking_progress` — 3
-halaman lain yang masih baca tabel-tabel ini ("Kritik & Saran", "Laporan
-Wilayah", sebagian "Meja Kerja Owner") jadi TIDAK terdampak sama sekali
-oleh Fase 16, nol perubahan kode di ketiganya.
+**PENGECUALIAN Fase 16 — sengaja DIPERTAHANKAN saat itu** (bukan
+kelalaian; ⚠️ **SUDAH TIDAK BERLAKU sejak Fase 17, lihat §7 poin 17**):
+Kasir (POS) dan Penjualan (arsip, `/dashboard/penjualan`) TIDAK dihapus
+DI FASE 16, karena keduanya bukan viewer read-only pasif — masih fitur
+create/edit penuh (termasuk "buat dari PO", foto produk, restore stok
+saat hapus item). Mempertahankan kedua halaman ini berarti 11 tabel
+intinya juga ikut dipertahankan sementara: `produk`, `produk_foto`,
+`resellers`, `purchase_orders`, `purchase_order_items`, `mutasi_stok`,
+`penjualan`, `penjualan_item`, `penjualan_pembayaran`,
+`reseller_reviews`, `tracking_progress` — 3 halaman lain yang masih
+membaca tabel-tabel ini ("Kritik & Saran", "Laporan Wilayah", sebagian
+"Meja Kerja Owner") jadi TIDAK terdampak sama sekali oleh Fase 16, nol
+perubahan kode di ketiganya PADA SAAT ITU.
 
 > Sebelum Fase 16: belum dihapus dari database/kode, cuma di-comment di
 > sidebar — dipakai referensi pola (CRUD, modal, RLS) saat membangun
 > modul baru sepanjang Fase 1-15. Setelah dikonfirmasi genuinely tidak
 > dibutuhkan lagi (kecuali kluster pengecualian di atas), dihapus
 > permanen di Fase 16.
+>
+> **Update Fase 17 (20 Jul 2026)**: kluster pengecualian di atas
+> (Kasir/POS, Penjualan, 11 tabelnya) DAN 3 halaman yang bergantung
+> padanya ("Kritik & Saran", "Laporan Wilayah", "Meja Kerja Owner")
+> dikonfirmasi ulang genuinely tidak dipakai lagi, lalu dihapus permanen
+> — menutup daftar deprecation §3.2 ini sepenuhnya. Lihat §7 poin 17
+> untuk rincian & backup.
 
 ### 3.3 Modul baru yang perlu dibangun
 
@@ -941,6 +959,67 @@ Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
       `/dashboard/aktivitas` sama sekali di kode saat ini — bukan
       furniture, jadi tidak diperbaiki sesi ini, cuma dicatat supaya
       tidak jadi asumsi keliru lagi.
+17. **Fase 17 — Pembersihan Final Furniture — ✅ SELESAI (20 Jul 2026)**:
+    langkah TERAKHIR pivot — hapus 2 pengecualian yang di Fase 16 sengaja
+    dipertahankan (`/dashboard/penjualan`, `/dashboard/pos`) beserta 11
+    tabel intinya, karena dikonfirmasi genuinely tidak dipakai lagi
+    (bisnis furniture resmi berhenti total). Ikut dihapus dalam putaran
+    yang sama: 2 tabel Owner Workspace (`owner_reminders`, `audit_log`)
+    dan halaman `/dashboard/owner/workspace`, `/dashboard/keuangan/
+    workspace`, `/dashboard/laporan/review` ("Kritik & Saran"),
+    `/dashboard/laporan/wilayah` ("Laporan Wilayah") — 3 kandidat yang di
+    Fase 16 masih dianggap "Tetap" di §3.1 karena membaca tabel yang
+    waktu itu masih dipertahankan. Juga dihapus: `/auth/login` (dead code
+    pra-pivot, sudah tidak dipanggil dari mana pun), `lib/printInvoice.ts`
+    & `lib/printResi.ts` (jadi yatim begitu Penjualan/POS hilang).
+    - **Investigasi sebelum eksekusi**: grep referensi kode ke tiap
+      tabel/halaman target + FK graph penuh (`information_schema`)
+      dipastikan tidak ada inbound FK dari tabel expedisi aktif manapun
+      ke 13 tabel target sebelum migration ditulis.
+    - **Backup**: `docs/backup/furniture-final-20260720.sql` (pg_dump
+      schema+data, 13 tabel), diverifikasi baris-per-baris (COPY count vs
+      live `COUNT(*)`) DAN full restore ke scratch database terpisah —
+      semua 13 tabel cocok persis sebelum migration dijalankan.
+    - **DROP 13 tabel** (migration `supabase/migrations/
+      20260720320000_pembersihan_furniture_final.sql`, urutan child-dulu
+      tanpa CASCADE — biar gagal keras kalau ada dependency yang
+      kelewat): `penjualan_item`, `penjualan_pembayaran`,
+      `reseller_reviews`, `tracking_progress`, `mutasi_stok`,
+      `produk_foto`, `purchase_order_items`, `penjualan`, `produk`,
+      `purchase_orders`, `resellers`, `owner_reminders`, `audit_log`.
+    - **Dependency tak terduga ditemukan di percobaan pertama migration**
+      (bukti FK-graph-check bekerja, bukan kelemahan): 2 view legacy
+      pra-pivot `tracking_publik` & `tracking_riwayat_publik` — sudah
+      digantikan total oleh `pengiriman_publik`/`pengiriman_riwayat_
+      publik` sejak Fase 1, zero referensi kode ke nama keduanya, aman
+      di-`DROP VIEW IF EXISTS` duluan sebelum DROP TABLE.
+    - **`owner_settings` TIDAK di-DROP** — masih aktif dipakai konfigurasi
+      absensi (`absensi_lat`/`absensi_lng`/`absensi_radius_meter`).
+      HANYA `DELETE` 3 baris key furniture: `siklus_audit_nota_hari`,
+      `siklus_stock_opname_hari`, dan `kode_internal_produk` (ditemukan
+      saat inventaris — lolos dari pembersihan Fase 16, zero referensi
+      kode). Tabel didokumentasikan ulang di CLAUDE.md sebagai murni
+      "pengaturan absensi".
+    - **Kode dihapus**: halaman `/dashboard/{penjualan,penjualan/[id],pos,
+      owner/workspace,keuangan/workspace,laporan/review,laporan/
+      wilayah}`, `/auth/login`, `lib/{printInvoice,printResi}.ts`, entri
+      sidebar terkait, interface furniture di `lib/types.ts` yang jadi
+      yatim. Diverifikasi `npx tsc --noEmit` bersih, build sukses, grep
+      nol referensi ke path yang dihapus, sebelum migration DB dijalankan
+      (kode dulu, database belakangan — dua putaran terpisah).
+    - **Verifikasi pasca-migration**: grep nol referensi ke 13 nama tabel
+      di seluruh codebase, smoke-test daftar halaman expedisi aktif dari
+      CLAUDE.md §Fitur Per Halaman semuanya masih render normal.
+    - **CLAUDE.md dipangkas**: seluruh section/baris/gotcha/larangan yang
+      merujuk entitas di atas dihapus (bukan cuma di-comment) — termasuk
+      dokumentasi tabel owner lama di §Database Schema, dan catatan
+      "11 tabel dipertahankan" dari entri Fase 16 sebelumnya. Roadmap
+      "Sudah Selesai" tetap menyimpan ringkasan Fase 16 & 17 sebagai jejak
+      historis (satu-satunya tempat nama tabel furniture masih disebut).
+    - Codebase & `CLAUDE.md` sekarang murni sistem expedisi — riwayat
+      pivot lengkap (termasuk keputusan yang sudah tidak berlaku lagi,
+      seperti "PENGECUALIAN dipertahankan" di §3.2 di atas) tetap hidup
+      di sini (`expedisi.md`), bukan di `CLAUDE.md`.
 
 ---
 

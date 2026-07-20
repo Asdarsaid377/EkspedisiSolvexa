@@ -8,7 +8,6 @@ import {
 	LayoutDashboard,
 	Package,
 	Users,
-	ShoppingCart,
 	BarChart2,
 	Clock,
 	LogOut,
@@ -22,9 +21,7 @@ import {
 	Receipt,
 	ClipboardList,
 	Truck,
-	MessageSquare,
 	ScanFace,
-	MapPin,
 	Navigation,
 	PackageCheck,
 	DollarSign,
@@ -56,32 +53,6 @@ const navItems = [
 			"sopir",
 		],
 	},
-];
-
-// Grup Owner di-hide sementara dari sidebar — halaman masih ada, cuma navnya disembunyikan
-// const ownerItems = [
-// 	{ href: "/dashboard/owner/workspace", label: "Meja Kerja Owner", icon: Layers },
-// ];
-
-// Penjualan arsip furniture — beku sejak Fase 1, tidak dibutuhkan untuk expedisi
-const penjualanItems: {
-	href: string;
-	label: string;
-	icon: any;
-	roles: string[];
-}[] = [
-	// {
-	// 	href: "/dashboard/penjualan",
-	// 	label: "Penjualan",
-	// 	icon: ShoppingCart,
-	// 	roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
-	// },
-	// {
-	// 	href: "/dashboard/pos",
-	// 	label: "Kasir (POS)",
-	// 	icon: Store,
-	// 	roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
-	// },
 ];
 
 // Grup "Operasional Armada" — GPS live sopir/kurir + manajemen armada + manifest (Fase 3).
@@ -180,11 +151,6 @@ const keuanganItems = [
 const laporanItems = [
 	{ href: "/dashboard/laporan/sopir", label: "Laporan Petugas", icon: Truck },
 	{
-		href: "/dashboard/laporan/wilayah",
-		label: "Laporan Wilayah",
-		icon: MapPin,
-	},
-	{
 		href: "/dashboard/piutang",
 		label: "Piutang",
 		icon: Receipt,
@@ -198,11 +164,6 @@ const laporanItems = [
 		href: "/dashboard/laporan/laba-trip",
 		label: "Laba per Trip",
 		icon: TrendingUp,
-	},
-	{
-		href: "/dashboard/laporan/review",
-		label: "Kritik & Saran",
-		icon: MessageSquare,
 	},
 ];
 
@@ -297,9 +258,6 @@ export default function Sidebar({
 		role ?? "",
 	);
 	const canSeeKeuangan = ["superadmin", "keuangan"].includes(role ?? "");
-	const visiblePenjualanItems = penjualanItems.filter((item) =>
-		item.roles.includes(role ?? ""),
-	);
 	const visiblePengirimanItems = pengirimanItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
@@ -325,18 +283,12 @@ export default function Sidebar({
 	}, [role]);
 
 	const [open, setOpen] = useState(false);
-	// const isOwnerActive = ownerItems.some((i) => pathname.startsWith(i.href));
-	// const [ownerOpen, setOwnerOpen] = useState(isOwnerActive);
 	const isLaporanActive = laporanItems.some((i) => pathname.startsWith(i.href));
 	const [laporanOpen, setLaporanOpen] = useState(isLaporanActive);
 	const isKeuanganActive = keuanganItems.some((i) =>
 		pathname.startsWith(i.href),
 	);
 	const [keuanganOpen, setKeuanganOpen] = useState(isKeuanganActive);
-	const isPenjualanActive = penjualanItems.some((i) =>
-		pathname.startsWith(i.href),
-	);
-	const [penjualanOpen, setPenjualanOpen] = useState(isPenjualanActive);
 	const isPengirimanActive = pengirimanItems.some((i) =>
 		pathname.startsWith(i.href),
 	);
@@ -387,65 +339,6 @@ export default function Sidebar({
 						}
 					/>
 				))}
-
-				{/* Collapsible Owner — superadmin only — di-hide sementara, lihat CLAUDE.md */}
-				{/* {isSuperAdmin && (
-					<div>
-						<button
-							onClick={() => setOwnerOpen(!ownerOpen)}
-							className={cn(
-								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
-								isOwnerActive
-									? "bg-indigo-50 text-indigo-700"
-									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-							)}>
-							<Layers size={18} />
-							<span className="flex-1 text-left">Owner</span>
-							{ownerOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-						</button>
-						{ownerOpen && (
-							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
-								{ownerItems.map((item) => (
-									<SubNavLink key={item.href} {...item} pathname={pathname} onClose={closeMenu} />
-								))}
-							</div>
-						)}
-					</div>
-				)} */}
-
-				{/* Collapsible Penjualan & POS */}
-				{visiblePenjualanItems.length > 0 && (
-					<div>
-						<button
-							onClick={() => setPenjualanOpen(!penjualanOpen)}
-							className={cn(
-								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
-								isPenjualanActive
-									? "bg-indigo-50 text-indigo-700"
-									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-							)}>
-							<ShoppingCart size={18} />
-							<span className="flex-1 text-left">Penjualan</span>
-							{penjualanOpen ? (
-								<ChevronDown size={14} />
-							) : (
-								<ChevronRight size={14} />
-							)}
-						</button>
-						{penjualanOpen && (
-							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
-								{visiblePenjualanItems.map((item) => (
-									<SubNavLink
-										key={item.href}
-										{...item}
-										pathname={pathname}
-										onClose={closeMenu}
-									/>
-								))}
-							</div>
-						)}
-					</div>
-				)}
 
 				{/* Collapsible Operasional Armada — Lacak GPS, Armada, Manifest */}
 				{visiblePengirimanItems.length > 0 && (
