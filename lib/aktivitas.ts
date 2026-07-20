@@ -10,7 +10,9 @@ export type AksiLog =
 	| "edit_tarif"
 	| "hapus_tarif"
 	| "edit_biaya_trip"
-	| "hapus_biaya_trip";
+	| "hapus_biaya_trip"
+	| "konfirmasi_booking"
+	| "tolak_booking";
 
 // Dipanggil SETELAH aksi sensitif sukses. Tidak pernah throw — gagal log
 // tidak boleh membatalkan aksi utama, cukup console.error (lihat spec 05 §3).

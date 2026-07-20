@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { createClient } from "@/lib/supabase/client";
 import {
 	LayoutDashboard,
 	Package,
@@ -10,44 +11,28 @@ import {
 	ShoppingCart,
 	BarChart2,
 	Clock,
-	FileText,
-	Trophy,
-	BoxesIcon,
 	LogOut,
 	ChevronRight,
 	ChevronDown,
 	Settings,
 	Menu,
 	X,
-	Target,
 	Wallet,
 	TrendingUp,
 	Receipt,
-	Store,
-	ExternalLink,
 	ClipboardList,
 	Truck,
 	MessageSquare,
-	UserCircle,
-	Factory,
-	Layers,
-	ShoppingBag,
-	GitBranch,
-	CheckSquare,
-	Award,
 	ScanFace,
 	MapPin,
-	Megaphone,
-	Wrench,
 	Navigation,
-	Briefcase,
-	UserCog,
 	PackageCheck,
 	DollarSign,
 	ShieldAlert,
 	Building2,
+	Inbox,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
@@ -71,25 +56,11 @@ const navItems = [
 			"sopir",
 		],
 	},
-	// Furniture-specific — tidak dibutuhkan untuk expedisi
-	// {
-	// 	href: "/dashboard/gudang/workspace",
-	// 	label: "Meja Kerja Gudang",
-	// 	icon: Briefcase,
-	// 	roles: ["superadmin", "gudang"],
-	// },
-	// {
-	// 	href: "/dashboard/produk",
-	// 	label: "Produk & Stok",
-	// 	icon: Package,
-	// 	roles: ["superadmin", "gudang", "kasir", "cs"],
-	// },
 ];
 
 // Grup Owner di-hide sementara dari sidebar — halaman masih ada, cuma navnya disembunyikan
 // const ownerItems = [
 // 	{ href: "/dashboard/owner/workspace", label: "Meja Kerja Owner", icon: Layers },
-// 	{ href: "/dashboard/owner/asisten", label: "Meja Kerja Asisten Owner", icon: UserCog },
 // ];
 
 // Penjualan arsip furniture — beku sejak Fase 1, tidak dibutuhkan untuk expedisi
@@ -110,33 +81,6 @@ const penjualanItems: {
 	// 	label: "Kasir (POS)",
 	// 	icon: Store,
 	// 	roles: ["superadmin", "keuangan", "kurir", "sopir", "kasir", "gudang"],
-	// },
-];
-
-// Model reseller/pelanggan furniture — tidak dibutuhkan untuk expedisi
-const resellerItems: {
-	href: string;
-	label: string;
-	icon: any;
-	roles: string[];
-}[] = [
-	// {
-	// 	href: "/dashboard/reseller",
-	// 	label: "Reseller",
-	// 	icon: Users,
-	// 	roles: ["superadmin", "keuangan", "cs", "kasir", "gudang", "kurir"],
-	// },
-	// {
-	// 	href: "/dashboard/pengumuman",
-	// 	label: "Pengumuman Reseller",
-	// 	icon: Megaphone,
-	// 	roles: ["superadmin"],
-	// },
-	// {
-	// 	href: "/dashboard/pelanggan",
-	// 	label: "Pelanggan",
-	// 	icon: UserCircle,
-	// 	roles: ["superadmin", "cs", "kasir"],
 	// },
 ];
 
@@ -169,13 +113,6 @@ const pengirimanItems = [
 			"kasir",
 		],
 	},
-	// Custom order furniture — tidak dibutuhkan untuk expedisi
-	// {
-	// 	href: "/dashboard/po",
-	// 	label: "Purchase Order",
-	// 	icon: ClipboardList,
-	// 	roles: ["superadmin", "cs", "gudang", "kurir", "keuangan", "kasir"],
-	// },
 ];
 
 // Grup "COD & Klaim" (Fase 4) — ledger setoran COD per sopir/kurir + proses klaim barang hilang/rusak
@@ -216,27 +153,13 @@ const pengirimanEntitasItems = [
 		icon: Users,
 		roles: ["superadmin", "cs", "kasir", "keuangan"],
 	},
-];
-
-// Kontrol penjualan retail furniture — tidak dibutuhkan untuk expedisi
-const kontrolItems: {
-	href: string;
-	label: string;
-	icon: any;
-	roles: string[];
-}[] = [
-	// {
-	// 	href: "/dashboard/target",
-	// 	label: "Target Penjualan",
-	// 	icon: Target,
-	// 	roles: ["superadmin"],
-	// },
-	// {
-	// 	href: "/dashboard/pencocokan",
-	// 	label: "Pencocokan Nota",
-	// 	icon: CheckSquare,
-	// 	roles: ["superadmin"],
-	// },
+	{
+		// Booking mandiri (spec 10) — sama role dengan CRUD customer (§5).
+		href: "/dashboard/booking",
+		label: "Booking Masuk",
+		icon: Inbox,
+		roles: ["superadmin", "cs", "kasir", "keuangan"],
+	},
 ];
 
 // Grup Keuangan — "Meja Kerja Keuangan" sengaja tidak dimasukkan (18 Jul 2026,
@@ -255,14 +178,7 @@ const keuanganItems = [
 ];
 
 const laporanItems = [
-	// Laporan Penjualan arsip furniture — beku sejak Fase 1, tidak relevan untuk expedisi
-	// { href: "/dashboard/laporan", label: "Laporan Penjualan", icon: FileText },
-	// { href: "/dashboard/laporan/reseller", label: "Top Reseller", icon: Trophy },
-	// { href: "/dashboard/reseller/tier", label: "Tier Reseller", icon: Award },
-	// { href: "/dashboard/laporan/produk", label: "Laporan Produk", icon: BoxesIcon },
-	// { href: "/dashboard/stock-aging", label: "Usia Barang", icon: Clock },
 	{ href: "/dashboard/laporan/sopir", label: "Laporan Petugas", icon: Truck },
-	// { href: "/dashboard/laporan/tukang", label: "Laporan Tukang", icon: Wrench },
 	{
 		href: "/dashboard/laporan/wilayah",
 		label: "Laporan Wilayah",
@@ -290,19 +206,6 @@ const laporanItems = [
 	},
 ];
 
-// Modul HPP produksi furniture — tidak dibutuhkan untuk expedisi
-const hppItems: { href: string; label: string; icon: any }[] = [
-	// { href: "/dashboard/hpp/bahan-baku", label: "Bahan Baku", icon: Layers },
-	// {
-	// 	href: "/dashboard/hpp/pembelian",
-	// 	label: "Pembelian BB",
-	// 	icon: ShoppingBag,
-	// },
-	// { href: "/dashboard/hpp/bom", label: "Bill of Materials", icon: GitBranch },
-	// { href: "/dashboard/hpp/batch", label: "Batch Produksi", icon: Factory },
-	// { href: "/dashboard/hpp/laporan", label: "Laporan HPP", icon: BarChart2 },
-];
-
 const adminItems = [
 	{ href: "/dashboard/pengguna", label: "Pengguna", icon: Settings },
 	{ href: "/dashboard/tarif-zona", label: "Tarif Zona", icon: DollarSign },
@@ -316,12 +219,14 @@ function NavLink({
 	icon: Icon,
 	pathname,
 	onClose,
+	badge,
 }: {
 	href: string;
 	label: string;
 	icon: any;
 	pathname: string;
 	onClose: () => void;
+	badge?: number;
 }) {
 	const active =
 		pathname === href || (href !== "/dashboard" && pathname.startsWith(href));
@@ -337,7 +242,12 @@ function NavLink({
 			)}>
 			<Icon size={18} />
 			{label}
-			{active && <ChevronRight size={14} className="ml-auto" />}
+			{!!badge && (
+				<span className="ml-auto bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+					{badge}
+				</span>
+			)}
+			{active && !badge && <ChevronRight size={14} className="ml-auto" />}
 		</Link>
 	);
 }
@@ -390,9 +300,6 @@ export default function Sidebar({
 	const visiblePenjualanItems = penjualanItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
-	const visibleResellerItems = resellerItems.filter((item) =>
-		item.roles.includes(role ?? ""),
-	);
 	const visiblePengirimanItems = pengirimanItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
@@ -402,9 +309,21 @@ export default function Sidebar({
 	const visibleCodKlaimItems = codKlaimItems.filter((item) =>
 		item.roles.includes(role ?? ""),
 	);
-	const visibleKontrolItems = kontrolItems.filter((item) =>
-		item.roles.includes(role ?? ""),
-	);
+	// Badge "Booking Masuk" (spec 10) — jumlah booking_request status pending.
+	// Fetch sekali per mount/role, BUKAN polling — cukup untuk v1, konsisten
+	// "sengaja sederhana". Cuma query kalau role ini memang bisa lihat nav
+	// item-nya (samakan dengan roles di pengirimanEntitasItems).
+	const [pendingBookingCount, setPendingBookingCount] = useState(0);
+	useEffect(() => {
+		if (!["superadmin", "cs", "kasir", "keuangan"].includes(role ?? "")) return;
+		const supabase = createClient();
+		supabase
+			.from("booking_request")
+			.select("id", { count: "exact", head: true })
+			.eq("status", "pending")
+			.then(({ count }) => setPendingBookingCount(count ?? 0));
+	}, [role]);
+
 	const [open, setOpen] = useState(false);
 	// const isOwnerActive = ownerItems.some((i) => pathname.startsWith(i.href));
 	// const [ownerOpen, setOwnerOpen] = useState(isOwnerActive);
@@ -418,10 +337,6 @@ export default function Sidebar({
 		pathname.startsWith(i.href),
 	);
 	const [penjualanOpen, setPenjualanOpen] = useState(isPenjualanActive);
-	const isResellerActive = resellerItems.some((i) =>
-		pathname.startsWith(i.href),
-	);
-	const [resellerOpen, setResellerOpen] = useState(isResellerActive);
 	const isPengirimanActive = pengirimanItems.some((i) =>
 		pathname.startsWith(i.href),
 	);
@@ -430,10 +345,6 @@ export default function Sidebar({
 		pathname.startsWith(i.href),
 	);
 	const [codKlaimOpen, setCodKlaimOpen] = useState(isCodKlaimActive);
-	const isKontrolActive = kontrolItems.some((i) => pathname.startsWith(i.href));
-	const [kontrolOpen, setKontrolOpen] = useState(isKontrolActive);
-	const isHppActive = hppItems.some((i) => pathname.startsWith(i.href));
-	const [hppOpen, setHppOpen] = useState(isHppActive);
 	const closeMenu = () => setOpen(false);
 
 	// JSX biasa (bukan sub-component) agar tidak ada unmount/remount tiap render
@@ -471,6 +382,9 @@ export default function Sidebar({
 						{...item}
 						pathname={pathname}
 						onClose={closeMenu}
+						badge={
+							item.href === "/dashboard/booking" ? pendingBookingCount : undefined
+						}
 					/>
 				))}
 
@@ -521,40 +435,6 @@ export default function Sidebar({
 						{penjualanOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visiblePenjualanItems.map((item) => (
-									<SubNavLink
-										key={item.href}
-										{...item}
-										pathname={pathname}
-										onClose={closeMenu}
-									/>
-								))}
-							</div>
-						)}
-					</div>
-				)}
-
-				{/* Collapsible Reseller & Pelanggan */}
-				{visibleResellerItems.length > 0 && (
-					<div>
-						<button
-							onClick={() => setResellerOpen(!resellerOpen)}
-							className={cn(
-								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
-								isResellerActive
-									? "bg-indigo-50 text-indigo-700"
-									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-							)}>
-							<Users size={18} />
-							<span className="flex-1 text-left">Reseller & Pelanggan</span>
-							{resellerOpen ? (
-								<ChevronDown size={14} />
-							) : (
-								<ChevronRight size={14} />
-							)}
-						</button>
-						{resellerOpen && (
-							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
-								{visibleResellerItems.map((item) => (
 									<SubNavLink
 										key={item.href}
 										{...item}
@@ -623,40 +503,6 @@ export default function Sidebar({
 						{codKlaimOpen && (
 							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
 								{visibleCodKlaimItems.map((item) => (
-									<SubNavLink
-										key={item.href}
-										{...item}
-										pathname={pathname}
-										onClose={closeMenu}
-									/>
-								))}
-							</div>
-						)}
-					</div>
-				)}
-
-				{/* Collapsible Kontrol Penjualan — superadmin only */}
-				{visibleKontrolItems.length > 0 && (
-					<div>
-						<button
-							onClick={() => setKontrolOpen(!kontrolOpen)}
-							className={cn(
-								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
-								isKontrolActive
-									? "bg-indigo-50 text-indigo-700"
-									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-							)}>
-							<Target size={18} />
-							<span className="flex-1 text-left">Kontrol Penjualan</span>
-							{kontrolOpen ? (
-								<ChevronDown size={14} />
-							) : (
-								<ChevronRight size={14} />
-							)}
-						</button>
-						{kontrolOpen && (
-							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
-								{visibleKontrolItems.map((item) => (
 									<SubNavLink
 										key={item.href}
 										{...item}
@@ -738,36 +584,6 @@ export default function Sidebar({
 					</div>
 				)}
 
-				{/* Collapsible HPP — superadmin only, disembunyikan otomatis saat hppItems kosong */}
-				{isSuperAdmin && hppItems.length > 0 && (
-					<div>
-						<button
-							onClick={() => setHppOpen(!hppOpen)}
-							className={cn(
-								"w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all",
-								isHppActive
-									? "bg-indigo-50 text-indigo-700"
-									: "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
-							)}>
-							<Factory size={18} />
-							<span className="flex-1 text-left">HPP Produksi</span>
-							{hppOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-						</button>
-						{hppOpen && (
-							<div className="mt-1 ml-2 pl-3 border-l-2 border-gray-100 space-y-0.5">
-								{hppItems.map((item) => (
-									<SubNavLink
-										key={item.href}
-										{...item}
-										pathname={pathname}
-										onClose={closeMenu}
-									/>
-								))}
-							</div>
-						)}
-					</div>
-				)}
-
 				{isSuperAdmin && (
 					<>
 						<p className="text-xs font-semibold text-gray-400 uppercase tracking-wider px-4 mb-2 mt-6">
@@ -786,16 +602,6 @@ export default function Sidebar({
 			</nav>
 
 			<div className="p-4 border-t border-gray-100">
-				{/* Katalog publik reseller furniture — tidak dibutuhkan untuk expedisi */}
-				{/* <a
-					href="/katalog"
-					target="_blank"
-					rel="noopener noreferrer"
-					className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-indigo-600 hover:bg-indigo-50 transition mb-1">
-					<Store size={18} />
-					Lihat Katalog Publik
-					<ExternalLink size={13} className="ml-auto text-indigo-400" />
-				</a> */}
 				<div className="flex items-center gap-3 px-4 py-3 mb-2">
 					<div className="w-8 h-8 bg-gray-200 rounded-full flex items-center justify-center text-xs font-bold text-gray-600">
 						{profile?.name?.charAt(0).toUpperCase()}

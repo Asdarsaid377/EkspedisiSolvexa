@@ -78,18 +78,36 @@ selesai, dan mengelola keuangan (termasuk COD) terkait.
 | `nomor_resi` + milestone tracking + `/resi/[nomor]` | **Fondasi utama** | Ini paling dekat dengan kebutuhan expedisi — tinggal generalisasi dari "tracking penjualan produk" jadi "tracking pengiriman apapun" |
 | Penjualan (invoice, split payment, pelunasan) | Direfactor jadi `pengiriman` | Struktur bisnis (nomor_faktur, milestone, uang_dp, status_bayar) tetap relevan, tapi field-field terkait produk (harga_katalog, bonus reseller) tidak dipakai |
 
-### 3.2 Di-deprecate (sudah di-comment di sidebar, tabel masih ada di DB)
+### 3.2 Di-deprecate — ✅ DIHAPUS PERMANEN di Fase 16 (20 Jul 2026),
+kecuali 2 pengecualian eksplisit
 
-Produk & Stok, Meja Kerja Gudang, Kasir (POS), Reseller + Pengumuman +
-Tier + Top Reseller, Pelanggan (grouped by reseller), Purchase Order,
-Target Penjualan, Pencocokan Nota, Laporan Produk, Usia Barang,
-Laporan Tukang, seluruh modul **HPP Produksi** (bahan baku, pembelian BB,
-BOM, batch produksi, laporan HPP), katalog publik (`/katalog`, `/toko`,
-`/etalase`, `/produk/[id]`), landing page marketing furniture.
+**Dihapus permanen** (kode + tabel database, lihat §7 poin 16 untuk
+rincian & backup): Produk & Stok, Meja Kerja Gudang, Reseller +
+Pengumuman + Tier + Top Reseller, Pelanggan (grouped by reseller),
+Purchase Order (halaman manajemen — tabelnya sendiri TETAP ADA, lihat
+pengecualian di bawah), Target Penjualan, Pencocokan Nota, Laporan
+Produk, Usia Barang, Laporan Tukang, seluruh modul **HPP Produksi**
+(bahan baku, pembelian BB, BOM, batch produksi, laporan HPP), katalog
+publik (`/katalog`, `/toko`, `/etalase`, `/produk/[id]`), landing page
+marketing furniture, reseller portal (`/r/[token]`), chat widget AI.
 
-> Belum dihapus dari database/kode — masih bisa dipakai referensi pola
-> (CRUD, modal, RLS) saat membangun modul baru. Hapus permanen setelah
-> pivot data model selesai dan dikonfirmasi tidak dibutuhkan lagi.
+**PENGECUALIAN — sengaja DIPERTAHANKAN** (bukan kelalaian): Kasir (POS)
+dan Penjualan (arsip, `/dashboard/penjualan`) TIDAK dihapus, karena
+keduanya bukan viewer read-only pasif — masih fitur create/edit penuh
+(termasuk "buat dari PO", foto produk, restore stok saat hapus item).
+Mempertahankan kedua halaman ini berarti 11 tabel intinya juga ikut
+dipertahankan: `produk`, `produk_foto`, `resellers`, `purchase_orders`,
+`purchase_order_items`, `mutasi_stok`, `penjualan`, `penjualan_item`,
+`penjualan_pembayaran`, `reseller_reviews`, `tracking_progress` — 3
+halaman lain yang masih baca tabel-tabel ini ("Kritik & Saran", "Laporan
+Wilayah", sebagian "Meja Kerja Owner") jadi TIDAK terdampak sama sekali
+oleh Fase 16, nol perubahan kode di ketiganya.
+
+> Sebelum Fase 16: belum dihapus dari database/kode, cuma di-comment di
+> sidebar — dipakai referensi pola (CRUD, modal, RLS) saat membangun
+> modul baru sepanjang Fase 1-15. Setelah dikonfirmasi genuinely tidak
+> dibutuhkan lagi (kecuali kluster pengecualian di atas), dihapus
+> permanen di Fase 16.
 
 ### 3.3 Modul baru yang perlu dibangun
 
@@ -775,9 +793,154 @@ Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
       manifest baru untuk "tiba di hub" (event tiba selalu input manual
       staf hub penerima) — ketiganya bisa diperluas nanti kalau terbukti
       dibutuhkan, bukan dikerjakan sekarang.
-15. **Fase 15 — Self-service booking + notifikasi WA otomatis**.
-16. **Pembersihan**: hapus modul & tabel furniture yang sudah dipastikan
-    tidak dipakai (§3.2).
+15. **Fase 15 — Self-service booking — ✅ SELESAI bagian 1 (20 Jul 2026)**:
+    spec terpisah `docs/spec/10-booking-mandiri.md` (sudah diarsipkan).
+    Aslinya menggabung self-service booking + notifikasi WA otomatis —
+    **notifikasi WA DIKELUARKAN dari scope** (keputusan sesi ini), butuh
+    provider WA Business API pihak ketiga berbayar yang belum dipilih,
+    jadi menyusul sebagai fase terpisah setelah provider ditentukan
+    (tetap di roadmap `CLAUDE.md` bagian "Prioritas Rendah").
+    - **Keputusan arsitektur terbesar**: akun customer booking mandiri
+      **100% terpisah dari Supabase Auth** (`auth.users`) — hampir semua
+      RLS tabel dashboard mengasumsikan "punya sesi Supabase Auth = staf
+      terpercaya" (banyak tabel masih `auth.uid() IS NOT NULL` tanpa role
+      gate), jadi kalau customer login lewat mekanisme sama mereka
+      otomatis lolos semua policy longgar itu. Sebagai gantinya: kolom
+      `customer.email`/`password_hash` (bukan tabel baru) + JWT sendiri
+      (`jose`, cookie `booking_session`) yang diterbitkan/diverifikasi
+      lewat API route service-role (`app/api/booking-auth/*`) — RLS
+      existing TIDAK PERLU disentuh sama sekali karena customer tidak
+      pernah punya sesi Supabase Auth. `middleware.ts` sengaja TIDAK
+      mendaftarkan `/booking` (proteksinya murni client-side, benteng
+      sesungguhnya di tiap API route).
+    - Tabel baru `booking_request` (draft order customer, WAJIB
+      dikonfirmasi staf sebelum jadi `pengiriman` sungguhan — bukan
+      milestone baru, biar tidak merembet ke manifest/laporan/RLS. Pola
+      sama alasan `pengiriman_transit` dipisah dari milestone di spec 09).
+      API baru `app/api/booking/submit` & `app/api/booking/riwayat` —
+      identitas customer SELALU dari JWT terverifikasi, tidak pernah dari
+      body/query; `pengirim_*` juga diambil server-side dari tabel
+      `customer`, bukan dipercaya dari body (form booking memang sengaja
+      tidak membuat field itu editable).
+    - **Keamanan endpoint publik** (register/login): rate limit per-IP/
+      per-email PLUS backstop global topology-independent — ditambahkan
+      di tengah eksekusi setelah dikonfirmasi deployment TIDAK ADA
+      reverse proxy di depan app (jadi `X-Forwarded-For` sepenuhnya bisa
+      dipalsu client, dibuktikan lewat tes manual bahwa limit per-IP saja
+      trivial dilewati). Plus honeypot field register, bcrypt cost 12,
+      pesan error login generik (tidak bedakan email tak terdaftar vs
+      password salah, `bcrypt.compare` tetap jalan penuh thd hash dummy
+      utk cegah timing side-channel).
+    - `lib/tarifAksi.ts` (`lookupTarifOngkir()`) **diekstrak** dari form
+      staf `/dashboard/pengiriman` (regresi check dibuktikan: 0 perubahan
+      perilaku form staf) — dipakai ulang di form booking customer
+      (estimasi ongkir, kargo selalu manual) DAN modal konfirmasi staf
+      `/dashboard/booking` (live recalculate, prefill dari
+      `ongkir_estimasi`).
+    - Halaman baru `/booking/*` (customer: register/login/riwayat/form
+      baru/profil, TANPA Sidebar, mobile-first pola sama `/tugas`) dan
+      `/dashboard/booking` (staf: `superadmin`/`cs`/`kasir`/`keuangan`,
+      konfirmasi reuse `insertPengirimanWithResi()` yang sudah ada — bukan
+      jalur insert baru — atau tolak dengan alasan wajib). Sidebar: nav
+      "Booking Masuk" dengan badge jumlah pending. 2 aksi `aktivitas_log`
+      baru: `konfirmasi_booking`/`tolak_booking`.
+    - **Gap ditemukan saat verifikasi end-to-end** (login sungguhan
+      sebagai tiap role staf, bukan cuma dugaan) **— sudah DIPERBAIKI di
+      sesi yang sama (20 Jul 2026)**: role `cs` bisa konfirmasi booking
+      tapi awalnya TIDAK masuk RLS INSERT `pengiriman_pembayaran`
+      (`superadmin`/`kasir`/`keuangan` saja sejak hardening spec 05) —
+      insert riwayat pembayaran ditolak RLS secara senyap untuk booking
+      dgn pembayaran awal. Gap pre-existing yang sama persis terjadi kalau
+      `cs` bikin pengiriman `lunas` langsung dari form staf biasa, bukan
+      spesifik fitur ini. **Fix**: migration
+      `20260720300000_fix_cs_pengiriman_pembayaran.sql` menambah `cs` ke
+      policy INSERT `pengiriman_pembayaran` — DELETE/rollback sengaja
+      TIDAK diikutkan (aksi koreksi lebih sensitif, tetap
+      `superadmin`/`kasir`/`keuangan` saja). Diverifikasi ulang dengan
+      sesi RLS sungguhan: `cs` sekarang bisa INSERT, DELETE masih ditolak
+      (dibuktikan lewat query row-count admin, bukan cuma cek ada/tidaknya
+      error — `.delete()` Supabase tidak error kalau RLS memfilter 0
+      baris, sempat bikin tes pertama salah simpul).
+    - **Registrasi TIDAK PERNAH mencocokkan/merge ke `customer` lama** —
+      selalu insert baris baru, konsisten keputusan Fase 8 (pencocokan
+      otomatis rawan duplikat kotor). **Tidak ada reset password mandiri**
+      di v1 (belum ada infrastruktur email/WA terverifikasi). **Tidak ada
+      pembatalan booking oleh customer** setelah submit.
+    Spec: `docs/spec/10-booking-mandiri.md` (diarsipkan ke
+    `docs/spec/archive/`)
+16. **Pembersihan — ✅ SELESAI (20 Jul 2026)**: langkah terakhir pivot,
+    hapus modul & tabel furniture yang sudah dipastikan tidak dipakai
+    (§3.2). Dikerjakan lewat 3 putaran diskusi terkonfirmasi: (1) hapus
+    kode + DROP tabel database (bukan cuma sembunyikan), (2) pg_dump
+    backup dulu sebelum DROP apapun, (3) prinsip pemilahan "hilangkan
+    yang betul-betul tidak digunakan" — bukan penghapusan membabi buta,
+    bukan juga mempertahankan berlebihan.
+    - **Investigasi sebelum eksekusi** (bukan asumsi): grep referensi
+      kode ke tiap tabel/halaman kandidat + query FK graph penuh
+      (`information_schema`) buat pastikan tidak ada tabel yang mau
+      di-DROP masih py inbound FK dari tabel yang dipertahankan.
+      Ditemukan 2 kejutan signifikan yang mengubah rencana awal: (a)
+      `sopir_devices`/`tracking_sopir` terlihat furniture tapi ternyata
+      infrastruktur aktif "Lacak GPS Sopir" — TIDAK disentuh; (b)
+      `/dashboard/penjualan` & `/dashboard/pos` bukan viewer arsip pasif
+      seperti diasumsikan — masih py fitur create/edit penuh (buat dari
+      PO, foto produk, restore stok), jadi mempertahankan keduanya
+      ternyata butuh 11 tabel furniture inti, bukan cuma `penjualan` itu
+      sendiri sebagaimana disangka semula.
+    - **Backup**: `docs/backup/furniture-pembersihan-20260720.sql`
+      (pg_dump schema+data 14 tabel yang di-DROP), diverifikasi baris demi
+      baris cocok persis dengan isi tabel asli sebelum migration
+      dijalankan (bukan cuma cek file tidak kosong).
+    - **DROP 14 tabel** (migration
+      `supabase/migrations/20260720310000_pembersihan_furniture.sql`,
+      urutan child-dulu tanpa CASCADE — biar gagal keras kalau ada
+      dependency yang kelewat, bukan cascade diam-diam): seluruh modul
+      HPP Produksi (`bahan_baku`, `batch_pemakaian_bahan`,
+      `batch_produksi`, `bom`, `mutasi_bahan_baku`,
+      `pembelian_bahan_baku`, `pembelian_bahan_baku_item`), chat widget
+      (`chat_ai_messages`, `chat_ai_sessions`), `pelanggan_crm`,
+      `pengumuman`, `po_progress`, `target_penjualan`, `pengiriman_foto`
+      (0 baris — nama mirip `pengiriman` tapi FK-nya ke `penjualan`,
+      sisa furniture yang genuinely mati, zero referensi kode).
+    - **KEEP 11 tabel** (lihat §3.2 untuk daftar lengkap + alasan) —
+      `/dashboard/penjualan`, `/dashboard/pos`, "Kritik & Saran",
+      "Laporan Wilayah", sebagian "Meja Kerja Owner" nol regresi, kode
+      ketiganya TIDAK disentuh sama sekali.
+    - **Kode dihapus**: ~20 halaman/direktori (`app/dashboard/{produk,
+      gudang,reseller,pengumuman,pelanggan,po,target,pencocokan,
+      stock-aging,hpp/*,owner/asisten}`, `app/dashboard/laporan/{produk,
+      tukang,reseller,page.tsx}`, `app/{katalog,toko,etalase,produk,
+      landing,r}`), 4 API route (`chat`, `reseller-portal`, `resi-review`
+      — dikonfirmasi ZERO caller, sudah mati sejak `/resi/[nomor]`
+      dialihkan, `verify-kode`), 2 komponen (`ChatWidget`,
+      `CatalogToolbar`). `lib/utils.ts`: hapus 2 export furniture-only
+      (`BONUS_KOREKSI_TABLE`, `cariKoreksiOtomatis`) — sisanya (termasuk
+      `insertPenjualanWithResi` yang masih dipakai Penjualan/POS) tidak
+      disentuh. `lib/types.ts`: **nol perubahan** (5 interface furniture
+      masih dipakai halaman yang dipertahankan).
+    - **`components/Sidebar.tsx`**: array `resellerItems`/`kontrolItems`/
+      `hppItems` dihapus TOTAL (bukan cuma di-comment lagi) karena akan
+      permanen kosong selamanya — state/JSX pendukungnya (toggle
+      collapsible, computed active-flag) ikut dihapus. `penjualanItems` &
+      entri "Meja Kerja Owner" di `ownerItems` TIDAK disentuh (masih
+      merujuk halaman yang dipertahankan). 14 import ikon lucide-react
+      yang jadi genuinely tidak terpakai ikut dibersihkan.
+    - **Storage bucket `BungaNaik` sengaja TIDAK disentuh** — bercampur
+      furniture & expedisi, ratusan folder ber-nama UUID yang tidak bisa
+      diklasifikasi tanpa cross-reference mendalam per baris DB, risiko
+      salah hapus lebih besar dari manfaatnya. Folder `po-progress/`
+      (4 file) jadi orphaned tapi filenya tidak dihapus.
+    - **Verifikasi**: `tsc --noEmit` bersih (termasuk setelah clear cache
+      `.next` yang sempat menampilkan error basi dari route yang sudah
+      dihapus), grep nol sisa referensi ke 14 tabel yang di-DROP di
+      seluruh `app/`/`lib/`/`components/`, smoke-test semua halaman aktif
+      (termasuk yang dipertahankan) render normal tanpa crash.
+    - **Temuan sampingan di luar scope** (dicatat, tidak diperbaiki):
+      dokumentasi lama CLAUDE.md menyebut "Log Aktivitas" render terpisah
+      di Sidebar, ternyata TIDAK ADA link sidebar untuk
+      `/dashboard/aktivitas` sama sekali di kode saat ini — bukan
+      furniture, jadi tidak diperbaiki sesi ini, cuma dicatat supaya
+      tidak jadi asumsi keliru lagi.
 
 ---
 
@@ -788,7 +951,8 @@ Tabel yang **kemungkinan besar tidak dipakai lagi** setelah pivot penuh:
   kargo = manual quote)
 - [x] Ada berapa titik pickup/drop-off / cabang saat ini? → **Dinamis**,
   jumlah cabang tidak di-hardcode — superadmin bisa tambah/kurangi kapan
-  saja (mulai dari 1). Relevan untuk Fase 5, tabel `cabang` perlu CRUD
+  saja (mulai dari 1). Relevan untuk Fase 5, ta
+  bel `cabang` perlu CRUD
   sendiri (bukan cuma seed baris tetap).
 - [x] Cabang jadi isolasi data atau cuma label? → **Cuma label/filter**,
   tidak ada pembatasan akses staf per cabang — semua staf tetap bisa lihat

@@ -327,6 +327,39 @@ export interface Pengeluaran {
   creator?: { name: string }
 }
 
+// Booking mandiri customer (spec 10) — draft order, wajib dikonfirmasi
+// staf sebelum jadi baris Pengiriman sungguhan (lihat pengiriman_id).
+export type BookingStatus = 'pending' | 'dikonfirmasi' | 'ditolak'
+
+export interface BookingRequest {
+  id: string
+  customer_id?: string
+  jenis_layanan: JenisLayanan
+  pengirim_nama: string
+  pengirim_telepon?: string
+  pengirim_alamat?: string
+  pengirim_kota?: string
+  penerima_nama: string
+  penerima_telepon?: string
+  penerima_alamat?: string
+  penerima_kota?: string
+  berat_kg: number
+  panjang_cm?: number
+  lebar_cm?: number
+  tinggi_cm?: number
+  isi_barang?: string
+  nilai_barang?: number
+  ongkir_estimasi?: number
+  catatan?: string
+  status: BookingStatus
+  catatan_penolakan?: string
+  pengiriman_id?: string
+  processed_by?: string
+  processed_at?: string
+  created_at: string
+  customer?: { nama: string; email?: string; telepon?: string }
+}
+
 export interface DashboardStats {
   total_penjualan: number
   total_laba: number

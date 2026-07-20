@@ -22,6 +22,8 @@ const AKSI_CFG: Record<AksiLog, { label: string; color: string }> = {
 	hapus_tarif: { label: "Hapus Tarif", color: "bg-red-100 text-red-700" },
 	edit_biaya_trip: { label: "Edit Biaya Trip", color: "bg-blue-100 text-blue-700" },
 	hapus_biaya_trip: { label: "Hapus Biaya Trip", color: "bg-red-100 text-red-700" },
+	konfirmasi_booking: { label: "Konfirmasi Booking", color: "bg-green-100 text-green-700" },
+	tolak_booking: { label: "Tolak Booking", color: "bg-red-100 text-red-700" },
 };
 
 interface LogRow {

@@ -43,6 +43,13 @@ Dibangun dengan **Next.js 14 (App Router) + Supabase (PostgreSQL + Auth + Storag
 │   ├── tugas/                          # Mobile-first, khusus sopir/kurir — TANPA Sidebar
 │   │   ├── layout.tsx                 # Auth boundary terpisah dari /dashboard (role sopir/kurir only)
 │   │   └── page.tsx                   # Daftar tugas aktif + tab "Selesai Hari Ini" (lib/pengirimanAksi.ts) + tombol "Scan untuk Muat" (manifest aktif hari ini, ScanQRManifestOverlay)
+│   ├── booking/                        # Mobile-first, customer booking mandiri — TANPA Sidebar (spec 10)
+│   │   ├── layout.tsx                 # Auth boundary TERPISAH TOTAL dari Supabase Auth — cek /api/booking-auth/me
+│   │   ├── login/page.tsx
+│   │   ├── register/page.tsx          # Honeypot field (§4.1) disembunyikan via CSS
+│   │   ├── page.tsx                   # Riwayat booking_request + pengiriman milik customer
+│   │   ├── baru/page.tsx              # Form booking baru — field pengirim TIDAK editable (snapshot dari akun)
+│   │   └── profil/page.tsx            # Edit nama/telepon/alamat/kota sendiri
 │   ├── dashboard/
 │   │   ├── layout.tsx
 │   │   ├── page.tsx
@@ -56,6 +63,7 @@ Dibangun dengan **Next.js 14 (App Router) + Supabase (PostgreSQL + Auth + Storag
 │   │   │   └── [id]/page.tsx          # Detail — assign kiriman (search manual + scan QR via ScanQRManifestOverlay), Berangkat/Selesai/Batalkan
 │   │   ├── cod/page.tsx                # Setoran COD per sopir/kurir
 │   │   ├── klaim/page.tsx              # Lapor & proses klaim barang hilang/rusak
+│   │   ├── booking/page.tsx            # Review booking mandiri — konfirmasi (jadi pengiriman) / tolak (spec 10)
 │   │   ├── cabang/page.tsx             # CRUD cabang (superadmin only, label/filter)
 │   │   ├── aktivitas/page.tsx          # Log Aktivitas read-only (superadmin + keuangan)
 │   │   ├── lacak-pengiriman/page.tsx   # Lacak GPS sopir
@@ -72,11 +80,15 @@ Dibangun dengan **Next.js 14 (App Router) + Supabase (PostgreSQL + Auth + Storag
 │   │   │   └── pengeluaran/page.tsx   # Kategori expedisi (gaji/sewa/maintenance_armada/dst), superadmin+keuangan
 │   │   └── pengguna/page.tsx
 │   └── api/
-│       └── create-user/route.ts
+│       ├── create-user/route.ts
+│       ├── booking-auth/               # register/login/logout/me/profil — service role, JWT booking_session (spec 10 §2)
+│       └── booking/                    # submit/riwayat — customer_id SELALU dari JWT, tidak pernah dari body (§4.1)
 ├── components/
 │   ├── Sidebar.tsx                     # NavLink & SubNavLink di luar komponen (no unmount/remount)
 │   └── ScanQRManifestOverlay.tsx       # Overlay kamera scan QR — dipakai BERSAMA /dashboard/manifest/[id] & /tugas
-├── contexts/AuthContext.tsx           # onAuthStateChange only, singleton client, skip TOKEN_REFRESHED
+├── contexts/
+│   ├── AuthContext.tsx                 # onAuthStateChange only, singleton client, skip TOKEN_REFRESHED (staf)
+│   └── BookingAuthContext.tsx          # fetch /api/booking-auth/me, TIDAK terkait Supabase Auth (customer)
 ├── lib/
 │   ├── supabase/client.ts             # Singleton createClient() — satu instance per tab
 │   ├── supabase/server.ts
@@ -86,16 +98,25 @@ Dibangun dengan **Next.js 14 (App Router) + Supabase (PostgreSQL + Auth + Storag
 │   ├── pengirimanConstants.ts          # TRANSISI_MILESTONE, getNextMilestones(), ALASAN_GAGAL_CFG
 │   ├── pengirimanAksi.ts               # submitSelesaiPOD()/submitGagalKirim() — dipakai BERSAMA /tugas & /dashboard/pengiriman/[id]
 │   ├── manifestAksi.ts                 # findEligibleCandidates()/scanLookupManifest()/addManifestItem() — dipakai BERSAMA /dashboard/manifest/[id] & /tugas
+│   ├── tarifAksi.ts                    # lookupTarifOngkir()/hitungBeratEfektif() — dipakai BERSAMA /dashboard/pengiriman & /dashboard/booking (modal konfirmasi)
+│   ├── bookingAuth.ts                  # signBookingSession()/verifyBookingSession()/getBookingCustomerId() — JWT (jose), TERPISAH dari Supabase Auth
+│   ├── bookingRateLimit.ts             # Rate limit in-memory endpoint booking-auth (per-IP/per-email + backstop global)
 │   ├── aktivitas.ts                    # logAktivitas() — audit trail aksi sensitif, lihat §RLS
 │   └── utils.ts                        # formatRupiah, formatDate, waLink(), generateNomorResi(), insertPengirimanWithResi()
-├── middleware.ts                       # Proteksi /dashboard & /tugas — /resi bebas
+├── middleware.ts                       # Proteksi /dashboard & /tugas — /resi & /booking bebas (booking auth-nya sendiri, lihat §Auth & Role)
 └── supabase/migrations/                # Migration ter-versi (Fase 1-5 + spec-driven, lihat expedisi.md §7)
 ```
 
-> Modul furniture lama (`produk`, `reseller`, `pelanggan`, `penjualan`, `po`, `target`,
-> `pencocokan`, `hpp/*`, katalog publik `/katalog`/`/toko`/`/etalase`/`/produk/[id]`,
-> `/landing`) **masih ada di kode & database**, hanya disembunyikan dari sidebar —
-> lihat `expedisi.md` §3.2 & §5 kalau perlu referensi pola lama.
+> **Fase 16 — Pembersihan (20 Jul 2026): SELESAI.** Modul furniture yang
+> genuinely tidak dipakai sudah dihapus permanen dari kode & database
+> (produk mgmt, gudang, reseller/pengumuman/pelanggan CRM, PO mgmt,
+> target/pencocokan, HPP produksi, katalog publik `/katalog`/`/toko`/
+> `/etalase`/`/produk/[id]`/`/landing`, reseller portal `/r/[token]`,
+> chat widget). **Yang TETAP ADA** (bukan kelalaian — masih dipakai fitur
+> aktif, lihat §Database Schema bagian `profiles`): halaman
+> `/dashboard/penjualan` (arsip + tetap bisa transaksi baru) &
+> `/dashboard/pos` (Kasir), plus 11 tabel pendukungnya. Lihat
+> `expedisi.md` §7 poin 16 untuk rincian keputusan lengkap & backup.
 
 ---
 
@@ -115,8 +136,15 @@ created_at TIMESTAMPTZ
 > Tabel furniture lama (`produk`, `produk_foto`, `resellers`, `penjualan`,
 > `penjualan_item`, `penjualan_pembayaran`, `reseller_reviews`, `mutasi_stok`,
 > `purchase_orders`, `purchase_order_items`, `tracking_progress`) masih ada
-> di database sebagai arsip data historis furniture — tidak didokumentasikan
-> di sini karena tidak berkaitan dengan bisnis logic expedisi. Baca langsung
+> di database sebagai arsip data historis furniture — **ini KLUSTER FINAL
+> yang sengaja dipertahankan** setelah Fase 16 (20 Jul 2026): 14 tabel
+> furniture LAIN (HPP produksi, chat widget, reseller portal/pengumuman/
+> CRM pelanggan, target penjualan, pencocokan nota) sudah di-DROP
+> permanen — lihat `expedisi.md` §7 poin 16. 11 tabel ini TETAP dipakai
+> `/dashboard/penjualan` & `/dashboard/pos` yang masih fungsional penuh
+> (bukan cuma arsip read-only), jadi **JANGAN DROP** tanpa keputusan
+> terpisah. Tidak didokumentasikan detail skemanya di sini karena tidak
+> berkaitan dengan bisnis logic expedisi. Baca langsung
 > dari kode/migration lama kalau perlu referensi.
 
 #### `owner_reminders`
@@ -329,9 +357,20 @@ pic_telepon   TEXT
 term_hari     INTEGER DEFAULT 0      -- tempo pembayaran; 0 = tunai/langsung
 catatan       TEXT
 aktif         BOOLEAN DEFAULT true
+email         TEXT                   -- nullable, akun booking mandiri (spec 10, 20 Jul 2026)
+password_hash TEXT                   -- bcrypt, HANYA diverifikasi lewat app/api/booking-auth/*
 created_by    UUID FK -> profiles
 created_at, updated_at TIMESTAMPTZ
+UNIQUE (LOWER(email)) WHERE email IS NOT NULL  -- partial index, customer lama tanpa akun tetap NULL
 ```
+
+> `email`/`password_hash` **BUKAN** mekanisme Supabase Auth apa pun —
+> murni kolom data biasa, diverifikasi manual di API route service-role.
+> Lihat §Auth & Role "Auth Customer — Booking Mandiri" untuk rasional
+> lengkap kenapa ini harus 100% terpisah dari `auth.users`. RLS
+> `auth_all_customer` yang sudah ada TIDAK diubah — dua kolom ini tetap
+> staff-only dari sisi client Supabase biasa, akses customer sendiri
+> HANYA lewat `app/api/booking-auth/*` (service role).
 
 `pengiriman.customer_id` — FK nullable ke `customer.id` (default NO ACTION,
 customer yang masih direferensikan tidak bisa dihapus — nonaktifkan saja).
@@ -631,6 +670,87 @@ urutan. Diterima sadar untuk kesederhanaan v1 (KT #3 spec 09) — bukan
 kelalaian. **Tidak ada perencanaan rute di muka** — staf mencatat kejadian
 aktual, bukan rute yang didefinisikan saat kiriman dibuat (KT #2).
 
+#### `booking_request` (spec 10 — Booking Mandiri, 20 Jul 2026)
+
+> **Draft order dari customer, WAJIB dikonfirmasi staf sebelum jadi baris
+> `pengiriman` sungguhan** — bukan milestone baru. Menambah milestone
+> ke-7 (`menunggu_konfirmasi`) akan merembet ke manifest/laporan/`/tugas`/
+> RLS; tabel terpisah + insert `pengiriman` HANYA saat staf konfirmasi
+> (reuse `insertPengirimanWithResi()` yang sudah ada) jauh lebih aman —
+> pola sama alasan `pengiriman_transit` dipisah dari milestone (spec 09).
+
+```sql
+id                UUID PRIMARY KEY DEFAULT gen_random_uuid()
+customer_id       UUID NOT NULL FK -> customer
+jenis_layanan     TEXT CHECK ('reguler'|'express'|'kargo') NOT NULL
+
+-- Snapshot pengirim, diambil SERVER-SIDE dari profil customer SAAT SUBMIT
+-- (bukan dari body request) — TIDAK auto-update kalau master customer
+-- berubah belakangan, pola sama pengiriman.pengirim_* (Fase 8)
+pengirim_nama     TEXT NOT NULL
+pengirim_telepon  TEXT
+pengirim_alamat   TEXT
+pengirim_kota     TEXT
+
+penerima_nama     TEXT NOT NULL
+penerima_telepon  TEXT
+penerima_alamat   TEXT
+penerima_kota     TEXT
+
+berat_kg          NUMERIC(10,2) NOT NULL DEFAULT 0
+panjang_cm, lebar_cm, tinggi_cm NUMERIC(10,2)
+
+isi_barang        TEXT
+nilai_barang      NUMERIC(15,2) DEFAULT 0
+ongkir_estimasi   NUMERIC(15,2)   -- hasil lookupTarifOngkir() saat submit (reguler/express);
+                                  -- NULL utk kargo — staf isi manual saat konfirmasi. TIDAK
+                                  -- PERNAH kolom mentah tarif_zona (harga_per_kg dst) yang
+                                  -- keluar ke customer, cuma angka hasil hitung (§4.1 poin 2)
+catatan           TEXT
+
+status            TEXT CHECK ('pending'|'dikonfirmasi'|'ditolak') DEFAULT 'pending'
+catatan_penolakan TEXT
+pengiriman_id     UUID FK -> pengiriman   -- terisi saat dikonfirmasi
+processed_by      UUID FK -> profiles
+processed_at      TIMESTAMPTZ
+created_at        TIMESTAMPTZ DEFAULT NOW()
+```
+
+RLS `auth_all_booking_request` (staff-only, `auth.uid() IS NOT NULL`) —
+pola sama tabel yang belum di-harden granular (`armada`/`manifest`). Ini
+**aman** meski longgar karena customer TIDAK PERNAH mengakses tabel ini
+lewat client Supabase — selalu lewat `app/api/booking/*` (service role),
+lihat §Auth & Role. Role yang bisa lihat/proses di `/dashboard/booking`
+(`superadmin`/`cs`/`kasir`/`keuangan`) tetap app-level saja, sama seperti
+role gate transisi milestone `pengiriman`.
+
+**Konfirmasi** (`/dashboard/booking`): staf buka detail (form pre-filled
+dari `booking_request`, semua field editable termasuk ongkir — reuse
+`lookupTarifOngkir()` live sama seperti form staf) → submit memanggil
+`insertPengirimanWithResi()` **yang sudah ada** (bukan jalur insert baru)
+dengan `customer_id` dari `booking_request.customer_id` → `UPDATE
+booking_request SET status='dikonfirmasi', pengiriman_id=..., processed_by,
+processed_at`. **Penolakan**: `catatan_penolakan` wajib diisi →
+`status='ditolak'`, tidak ada `pengiriman` yang dibuat. Kedua aksi dicatat
+ke `aktivitas_log` (`konfirmasi_booking`/`tolak_booking`).
+
+**Registrasi customer TIDAK PERNAH mencocokkan/merge ke `customer` lama**
+(nama/telepon sama) — insert baris `customer` BARU selalu, konsisten
+keputusan Fase 8 (pencocokan otomatis rawan duplikat kotor). Bisa
+menghasilkan 2 baris `customer` untuk orang yang sama (satu dibuat staf,
+satu self-register) — staf gabungkan manual kalau perlu, di luar scope v1.
+
+> **Gap ditemukan saat verifikasi, sudah DIPERBAIKI (20 Jul 2026)**: role
+> `cs` bisa konfirmasi booking (ada di role gate `/dashboard/booking`)
+> tapi awalnya **tidak** masuk RLS INSERT `pengiriman_pembayaran`
+> (`superadmin`/`kasir`/`keuangan` saja) — insert baris riwayat pembayaran
+> saat konfirmasi booking dengan `status_bayar` `dp`/`lunas` ditolak RLS
+> secara senyap. Sudah di-fix: `cs` ditambah ke policy INSERT
+> `pengiriman_pembayaran` (`supabase/migrations/
+> 20260720300000_fix_cs_pengiriman_pembayaran.sql`), DELETE/rollback
+> sengaja tidak diikutkan (tetap `superadmin`/`kasir`/`keuangan` saja,
+> aksi koreksi lebih sensitif). Lihat §RLS untuk detail lengkap.
+
 ---
 
 ### Views Publik
@@ -700,11 +820,13 @@ internal staf), `manifest_id`, `created_by`. Label di UI publik selalu
 
 ---
 
-> Modul HPP (`bahan_baku`, `pembelian_bahan_baku`, `bom`, `batch_produksi`, dst.) dan
-> function `rekalkulasi_laba()`/`generate_nomor_faktur()` adalah bagian dari costing
-> produksi furniture — tidak didokumentasikan di sini karena tidak berkaitan dengan
-> bisnis logic expedisi. Tabelnya masih ada di database, baca kode/migration lama
-> kalau perlu referensi.
+> Modul HPP (dulu: `bahan_baku`, `pembelian_bahan_baku`, `bom`, `batch_produksi`, dst.)
+> adalah bagian dari costing produksi furniture — **tabelnya sudah di-DROP
+> permanen di Fase 16 (20 Jul 2026, `expedisi.md` §7 poin 16)**, halaman
+> `/dashboard/hpp/*` juga sudah dihapus. Function `rekalkulasi_laba()`/
+> `generate_nomor_faktur()` TIDAK terpengaruh (trigger di `penjualan`/
+> `produk`, bukan tabel HPP) — masih ada & masih dipakai
+> `/dashboard/penjualan`/`/dashboard/pos` yang tetap aktif.
 
 ## SQL Functions
 
@@ -1149,6 +1271,40 @@ export async function insertPengirimanWithResi(            // insert + retry col
 - Setiap termin pembayaran → insert ke `pengiriman_pembayaran`
 - `uang_dp` = akumulasi total terbayar
 
+### Booking Mandiri — Self-Service Customer (spec 10, 20 Jul 2026)
+
+> **Notifikasi WA status booking SENGAJA belum ada** — butuh provider WA
+> Business API pihak ketiga berbayar yang belum dipilih (fase terpisah).
+> Customer harus buka `/booking` manual untuk cek status dikonfirmasi/
+> ditolak. Lihat §Database Schema `booking_request` untuk skema & alur
+> konfirmasi/tolak lengkap, dan §Auth & Role "Auth Customer" untuk
+> arsitektur auth-nya.
+
+- **Ongkir**: reguler/express → `lookupTarifOngkir()` (`lib/tarifAksi.ts`,
+  formula sama Fase 2) dijalankan server-side saat submit, ditampilkan ke
+  customer sebagai **"Estimasi"**, bukan harga final — staf tetap bisa
+  ubah bebas saat konfirmasi. Kargo → tidak ada estimasi sama sekali,
+  customer diberi tahu "akan dihubungi untuk quote".
+- **Validasi server wajib di `/api/booking/submit`** (§4.1 poin 5,
+  independen dari validasi form): `berat_kg` > 0 dan <= 10000 kg,
+  panjang/lebar/tinggi > 0 dan <= 1000 cm (kalau diisi), `nilai_barang` >=
+  0, string dipangkas (nama/kota <= 200, alamat/catatan <= 2000) — bukan
+  ditolak, kecuali `penerima_nama` yang wajib diisi 2-200 karakter.
+- **Tidak ada pembatalan booking oleh customer** setelah submit (v1) —
+  hubungi staf manual kalau salah isi.
+- **Tidak ada fitur reset password mandiri** (v1) — belum ada
+  infrastruktur email/WA terverifikasi untuk alur reset yang aman.
+  Customer yang lupa password hubungi staf; staf reset manual lewat query
+  SQL langsung kalau sering terjadi (jangan bangun alur reset email
+  sebelum ada pengiriman email yang benar-benar terverifikasi).
+- **Riwayat customer** (`/booking`, via `/api/booking/riwayat`): gabungan
+  `booking_request` + `pengiriman` milik customer tsb, dua query terpisah
+  di-merge di response (bukan SQL JOIN/UNION) — pola sama `/resi/[nomor]`
+  (spec 09). Kolom `pengiriman` yang dikembalikan ke customer **allowlist
+  eksplisit** persis sama larangannya dengan view `pengiriman_publik`:
+  TIDAK PERNAH `catatan_internal`/`petugas_*`/breakdown ongkir-asuransi/
+  `nomor_faktur`.
+
 ---
 
 ## Auth & Role System
@@ -1196,6 +1352,78 @@ const { user, profile, isSuperAdmin, role, signOut } = useAuth();
 - Middleware hapus cookie `sb-*` saat redirect ke `/login`
 - `NavLink` dan `SubNavLink` di `Sidebar.tsx` didefinisikan di luar komponen — mencegah unmount/remount tiap auth update
 
+### Auth Customer — Booking Mandiri (spec 10, 20 Jul 2026)
+
+> **ATURAN ARSITEKTUR MUTLAK**: akun customer booking mandiri TIDAK
+> PERNAH menyentuh Supabase Auth (`auth.users`) dalam bentuk apa pun.
+> Kalau terasa "lebih mudah" pakai Supabase Auth untuk customer juga —
+> itu SALAH, tolak dari awal. Lihat rasional lengkap di bawah.
+
+Hampir semua RLS di database (lihat matriks §RLS di bawah) mengasumsikan
+"siapa pun yang punya sesi Supabase Auth = staf terpercaya" — banyak
+tabel (`armada`, `manifest`, `manifest_item`, `customer`,
+`pengiriman_tracking`, `booking_request`, dan SELECT `pengiriman` sendiri)
+masih berpolicy selonggar `auth.uid() IS NOT NULL` **tanpa role gate sama
+sekali**. Kalau akun customer dibuat lewat Supabase Auth juga, begitu
+customer login, `auth.uid()` mereka otomatis lolos SEMUA policy longgar
+itu — customer bisa baca seluruh data pengiriman/manifest/armada semua
+orang lewat REST API langsung, bukan cuma miliknya sendiri.
+
+**Desain yang dipakai — 100% terpisah**:
+
+- Kolom `customer.email`/`customer.password_hash` (bukan tabel baru) —
+  diverifikasi manual (bcrypt) di API route, BUKAN mekanisme Supabase Auth.
+- Login/register lewat `app/api/booking-auth/*` yang pakai **service role
+  key** (pola sama `/api/create-user/route.ts`) — menerbitkan **JWT
+  sendiri** (`jose`, bukan token Supabase) di cookie httpOnly terpisah
+  `booking_session`, signed pakai `BOOKING_JWT_SECRET` (env, WAJIB beda
+  dari secret lain manapun). Payload JWT SENGAJA minimal: `sub` (customer
+  id) + `exp` (7 hari), tidak ada data sensitif.
+- **SEMUA akses data customer** (submit booking, riwayat, edit profil)
+  lewat `app/api/booking/*` atau `app/api/booking-auth/*` yang pakai
+  service role + validasi JWT manual (`lib/bookingAuth.ts:
+  getBookingCustomerId()`) — BUKAN lewat `createClient()` Supabase browser
+  client biasa. RLS tabel existing **TIDAK PERLU disentuh sama sekali**
+  untuk fitur ini — customer tidak pernah punya sesi Supabase Auth.
+- `middleware.ts` **SENGAJA TIDAK** mendaftarkan `/booking` sebagai route
+  terproteksi (beda dari `/dashboard`/`/tugas`) — `updateSession()` di
+  situ cuma cek sesi Supabase Auth staf, customer tidak pernah punya itu.
+  Proteksi `/booking/*` murni client-side (`app/booking/layout.tsx` cek
+  `/api/booking-auth/me`) — UX saja, BUKAN lapisan keamanan (lapisan
+  keamanan sesungguhnya ada di tiap API route, lihat poin di atas).
+
+**Aturan keamanan wajib di SETIAP endpoint `booking-auth`/`booking` baru**
+(spec 10 §4.1 — kalau menambah endpoint baru di jalur ini, semua ini WAJIB
+dipenuhi ulang, bukan cuma di endpoint yang sudah ada):
+
+1. Identitas customer **HANYA** dari `getBookingCustomerId(req)` (JWT
+   cookie terverifikasi) — TIDAK PERNAH dari `customer_id` di body/query.
+2. Response yang mengandung data `pengiriman` selalu pakai `.select()`
+   allowlist kolom eksplisit — jangan `select("*")`.
+3. Endpoint publik tanpa auth (`register`/`login`) WAJIB rate limit +
+   honeypot (register). Selain limit per-IP/per-email, ada **backstop
+   global topology-independent** (`register`: 30/5 menit, `login`: 60/5
+   menit, key konstan bukan per-identitas) — ditambahkan karena deployment
+   TIDAK ADA reverse proxy, jadi `X-Forwarded-For` sepenuhnya bisa
+   dipalsu client dan limit per-IP saja trivial dilewati (dibuktikan lewat
+   tes manual). Trade-off yang diterima sadar: penyerang bisa sengaja
+   memicu limit global untuk memblokir registrasi/login semua orang
+   selama window aktif — lebih baik daripada flood tak terbatas yang
+   menghabiskan CPU lewat bcrypt cost-12 di tiap percobaan.
+4. Password minimal 8 karakter, bcrypt cost >= 10 (dipakai: 12). Pesan
+   error login SELALU generik ("email atau password salah") — jangan
+   bedakan email tak terdaftar vs password salah, dan `bcrypt.compare`
+   tetap dijalankan penuh terhadap hash dummy kalau email tidak ditemukan
+   (cegah timing side-channel).
+5. Validasi batas input di server (§Business Logic "Booking Mandiri"),
+   independen dari validasi form — form yang beda/di-bypass tidak boleh
+   melewati batas ini.
+
+`lib/bookingRateLimit.ts` pakai **in-memory Map**, bukan tabel DB/Redis —
+cukup untuk deployment single-instance sekarang. State hilang tiap restart
+dan TIDAK sinkron kalau nanti pindah ke multi-instance/serverless — kalau
+itu terjadi, ganti basis penyimpanan (bukan ubah logika limit-nya).
+
 ### RLS
 
 > **Rewrite total 18 Jul 2026** (spec `docs/spec/05-hardening-rls.md`,
@@ -1231,7 +1459,7 @@ perubahan perilaku baca dari hardening ini:
 | ----------------------- | --------------------------------------------------------------------------------------------------------| ----------------------------- | ----------------------------- |
 | `tarif_zona`            | superadmin                                                                                               | superadmin                    | superadmin                    |
 | `cabang`                | superadmin                                                                                               | superadmin                    | superadmin                    |
-| `pengiriman_pembayaran` | superadmin, kasir, keuangan                                                                              | **tidak ada policy** (memang tidak ada alur edit pembayaran) | superadmin, kasir, keuangan (rollback) |
+| `pengiriman_pembayaran` | superadmin, kasir, keuangan, **cs** (ditambah 20 Jul 2026, lihat catatan di bawah) | **tidak ada policy** (memang tidak ada alur edit pembayaran) | superadmin, kasir, keuangan (rollback — `cs` SENGAJA TIDAK ditambah di sini, cuma INSERT) |
 | `pengiriman`            | tidak berubah (semua staf)                                                                               | tidak dipersempit di hardening ini (milestone dkk tetap app-level) | **superadmin, keuangan saja** (turun dari 5 role — breaking change, lihat catatan di bawah) |
 | `klaim`                 | semua staf                                                                                                | superadmin, keuangan          | superadmin only               |
 | `cod_setoran`           | superadmin, keuangan, kurir/sopir (kurir/sopir **hanya** `sopir_id = auth.uid()`, cegah setor atas nama orang lain) | superadmin, keuangan | superadmin, keuangan |
@@ -1245,6 +1473,21 @@ sudah tidak berwenang (mereka masih lihat tombolnya) — DB yang menolak.
 Kalau mau menyembunyikan tombolnya juga di React, itu perubahan terpisah
 di luar hardening ini (belum dikerjakan).
 
+**Fix INSERT `pengiriman_pembayaran` untuk `cs`** (20 Jul 2026,
+`supabase/migrations/20260720300000_fix_cs_pengiriman_pembayaran.sql`):
+ditemukan saat verifikasi spec 10 (booking mandiri) — `cs` bisa bikin
+`pengiriman` (INSERT tabel itu terbuka semua staf) termasuk yang
+`status_bayar` `dp`/`lunas`, tapi RLS INSERT `pengiriman_pembayaran`
+awalnya cuma `superadmin`/`kasir`/`keuangan`, jadi baris riwayat
+pembayarannya ditolak RLS secara senyap. Fix-nya menambah `cs` ke policy
+INSERT saja — DELETE (rollback) **sengaja tidak diikutkan**, itu aksi
+koreksi yang lebih sensitif, tetap `superadmin`/`kasir`/`keuangan` saja.
+Diverifikasi ulang lewat sesi RLS sungguhan (bukan cuma baca migration):
+`cs` sekarang bisa INSERT, `cs` masih ditolak kalau coba DELETE
+(dikonfirmasi row tetap ada lewat query admin, bukan cuma cek
+ada/tidaknya error — `.delete()` Supabase TIDAK error kalau RLS
+memfilter 0 baris, jadi absennya error saja BUKAN bukti sukses).
+
 **Granularitas yang RLS TIDAK bisa jaga** (tetap app-level, by design):
 approve vs tandai-selesai klaim sama-sama `UPDATE klaim` — RLS tidak bisa
 membedakan kolom/nilai, jadi "approve nilai ganti rugi superadmin only"
@@ -1255,8 +1498,11 @@ terekam di `aktivitas_log`). Sama untuk transisi milestone `pengiriman`
 
 **Tidak disentuh** (masih `auth_all_*` FOR ALL, `auth.uid() IS NOT NULL`
 — di luar scope hardening ini, bisa menyusul sesi terpisah): `armada`,
-`manifest`, `manifest_item`, `customer`, `pengiriman_tracking`, semua
-tabel furniture lama. `absensi`/`face_enrollment` sudah granular dari
+`manifest`, `manifest_item`, `customer`, `pengiriman_tracking`,
+`pengiriman_transit`, `booking_request` (spec 10 — aman meski longgar
+karena customer TIDAK PERNAH mengakses tabel ini langsung, selalu lewat
+`app/api/booking/*` service role, lihat §Auth Customer Booking Mandiri),
+semua tabel furniture lama. `absensi`/`face_enrollment` sudah granular dari
 awal (lihat §SQL yang Perlu Dijalankan). Views publik tracking
 (`pengiriman_publik`/`pengiriman_riwayat_publik`): `GRANT SELECT TO anon`,
 tidak berubah.
@@ -1318,22 +1564,36 @@ NEXT_PUBLIC_WA_TOKO=6289630085814
 
 ```typescript
 // navItems: Dashboard, Absensi
-// pengirimanEntitasItems: Pengiriman, Customer (flat nav, dekat satu sama lain)
+// pengirimanEntitasItems: Pengiriman, Customer, Booking Masuk (flat nav,
+//   dekat satu sama lain) — Booking Masuk punya badge jumlah `pending`
+//   (spec 10), satu-satunya item dengan badge; NavLink dapat prop
+//   `badge?: number` opsional utk ini, di-pass di render call, BUKAN di
+//   array data (menjaga array tetap literal/statis)
 // pengirimanItems "Operasional Armada": Lacak GPS Sopir, Armada, Manifest
 // codKlaimItems "COD & Klaim": Setoran COD, Klaim
 // laporanItems: Laporan Petugas, Laporan Wilayah, Piutang, Keterlambatan, Laba per Trip, Kritik & Saran
-// Grup "Admin" (isSuperAdmin || role === "keuangan"): adminItems (Pengguna,
-//   Tarif Zona, Cabang) di-map HANYA kalau isSuperAdmin; "Log Aktivitas"
-//   dirender terpisah di luar adminItems.map() supaya terlihat jg oleh
-//   keuangan tanpa memunculkan 3 link admin lain yg akan redirect balik
-// ownerItems, keuanganItems, penjualanItems/resellerItems/kontrolItems/hppItems,
-//   entri "Laporan Penjualan" di laporanItems: array/entri masih ada tapi
-//   di-comment-out (18 Jul 2026 — grup Owner & Keuangan serta Laporan Penjualan
-//   sengaja di-hide, lihat §Fitur Per Halaman; sisanya furniture lama) —
-//   halaman-halamannya tetap ada & bisa diakses langsung via URL, jangan
+// Grup "Admin" (isSuperAdmin only): adminItems (Pengguna, Tarif Zona, Cabang)
+// ownerItems, keuanganItems, penjualanItems: array/entri masih ada tapi
+//   di-comment-out (18 Jul 2026 — grup Owner & Keuangan sengaja di-hide,
+//   lihat §Fitur Per Halaman) — halaman-halamannya (termasuk
+//   /dashboard/penjualan & /dashboard/pos, dipertahankan sengaja di Fase
+//   16 pembersihan) tetap ada & bisa diakses langsung via URL, jangan
 //   uncomment tanpa alasan konkret
+// resellerItems/kontrolItems/hppItems: SUDAH DIHAPUS TOTAL (Fase 16
+//   pembersihan, 20 Jul 2026) — bukan cuma di-comment lagi, array &
+//   state/JSX pendukungnya sudah tidak ada di kode. Jangan tambahkan
+//   lagi tanpa alasan konkret (modul furniture yang direpresentasikannya
+//   sudah di-DROP dari database)
 // NavLink & SubNavLink: fungsi di luar Sidebar — jangan dipindah ke dalam komponen
 ```
+
+> **Catatan doc-vs-kode**: dokumentasi lama menyebut "Log Aktivitas
+> dirender terpisah di luar `adminItems.map()`" — ini TIDAK BENAR di kode
+> saat ini (ditemukan 20 Jul 2026 saat pembersihan Sidebar, halaman
+> `/dashboard/aktivitas` sendiri tetap aktif & benar per §Fitur Per
+> Halaman, cuma tidak ada link sidebar-nya sama sekali). Di luar scope
+> Fase 16 (bukan furniture) — dicatat di sini supaya tidak jadi asumsi
+> keliru lagi, perbaikannya (tambah link sidebar) belum dikerjakan.
 
 ### Foto — Storage Paths
 
@@ -1536,6 +1796,59 @@ selesai|gagal_kirim`, `gagal_kirim → dikirim|retur` — lihat peta transisi
   sopir/kurir = satu trip aktif per hari, kalau ada lebih dari satu diambil
   yang paling baru dibuat). Kalau tidak ada manifest aktif hari ini, tombol
   tetap tampil (bukan hilang) tapi disabled dengan pesan jelas.
+
+### Booking Mandiri (`/booking/*`) — customer-facing, baru 20 Jul 2026
+
+> Route TERPISAH dari `/dashboard`/`/tugas` — layout sendiri
+> (`app/booking/layout.tsx`, TANPA Sidebar, mobile-first pola sama
+> `/tugas`) tapi auth-nya beda sumber total, lihat §Auth & Role "Auth
+> Customer — Booking Mandiri". `middleware.ts` **tidak** memproteksi rute
+> ini (proteksinya client-side). Spec: `docs/spec/10-booking-mandiri.md`.
+
+- `/booking/register`, `/booking/login`: form biasa + honeypot field
+  tersembunyi (register) — lihat §Auth & Role untuk aturan keamanan
+  lengkap (rate limit, bcrypt, pesan error generik).
+- `/booking` (setelah login): riwayat gabungan `booking_request` +
+  `pengiriman` milik customer (`/api/booking/riwayat`), badge status per
+  booking (Menunggu/Dikonfirmasi/Ditolak — beserta alasan penolakan kalau
+  ada), kiriman aktif klik → buka `/resi/[nomor]` (tab baru).
+- `/booking/baru`: form booking — jenis layanan, data penerima, berat/
+  dimensi, isi barang, nilai barang, catatan. **Field pengirim TIDAK
+  editable** (ringkasan read-only dari data akun + link "Ubah di Profil")
+  — konsisten dengan `/api/booking/submit` yang memang tidak pernah baca
+  `pengirim_*` dari body sama sekali (§Auth & Role). Submit sukses →
+  tampilkan estimasi ongkir (atau notice "akan dihubungi" utk kargo/rute
+  tanpa tarif), TIDAK auto-redirect supaya customer sempat baca estimasi.
+- `/booking/profil`: edit nama/telepon/alamat/kota sendiri
+  (`PATCH /api/booking-auth/profil`) — email read-only (tidak bisa
+  diubah dari sini, tidak ada alur ganti email di v1).
+- **Tidak ada notifikasi push/WA** saat status booking berubah — customer
+  harus buka `/booking` manual untuk cek (lihat §Business Logic "Booking
+  Mandiri" untuk alasan WA ditunda).
+
+### Booking Masuk (`/dashboard/booking`) — staf, baru 20 Jul 2026
+
+> Role akses (lihat & proses): `superadmin`, `cs`, `kasir`, `keuangan` —
+> sama dengan CRUD `customer`. RLS `booking_request` belum di-harden
+> granular (lihat §RLS), jadi role gate ini murni app-level React, sama
+> polanya dengan `armada`/`manifest`.
+
+- Filter tab status (Pending default/Dikonfirmasi/Ditolak/Semua). Sidebar:
+  badge jumlah `pending` di nav "Booking Masuk" (fetch sekali per mount,
+  bukan polling).
+- **Konfirmasi**: modal form pre-filled dari `booking_request` (semua
+  field editable, termasuk ongkir — reuse `lookupTarifOngkir()` LIVE sama
+  persis form `/dashboard/pengiriman`, prefill awal dari
+  `ongkir_estimasi`), metode/status bayar, kurir/sopir, cabang. Submit
+  reuse `insertPengirimanWithResi()` yang sudah ada (bukan jalur insert
+  baru) → `catatan_internal` otomatis berisi jejak balik ke
+  `booking_request` id → `UPDATE booking_request` jadi `dikonfirmasi` +
+  `pengiriman_id` → `logAktivitas('konfirmasi_booking')`.
+- **Tolak**: alasan wajib diisi (`catatan_penolakan`) → `UPDATE
+  booking_request` jadi `ditolak` → `logAktivitas('tolak_booking')`. Tidak
+  ada `pengiriman` yang dibuat.
+- Lihat gotcha role `cs` + `pengiriman_pembayaran` di §Database Schema
+  `booking_request` dan §Known Issues.
 
 ### Customer (`/dashboard/customer`) — baru, 18 Jul 2026
 
@@ -1891,6 +2204,10 @@ Daftar user, tambah via `/api/create-user` dengan `SUPABASE_SERVICE_ROLE_KEY`.
 31. **Manifest Berangkat sukses tapi tidak ada Riwayat Transit yang muncul di kiriman anggotanya** → cek `manifest.cabang_id` — kalau NULL, insert transit otomatis memang DILEWATI TOTAL by design (spec 09 §3, regresi check terhadap Fase 3 untuk manifest yang belum pernah diisi cabang). Isi `cabang_id` manifest-nya kalau memang butuh event "berangkat" tercatat
 32. **Event "tiba" tidak pernah muncul otomatis, harus selalu input manual** → disengaja (by design, bukan bug) — manifest Fase 3 tidak punya transisi status yang merepresentasikan "tiba di hub", cuma "berangkat" yang otomatis dari tombol Berangkat manifest (KT #4 spec 09). Staf hub penerima input manual dari `/dashboard/pengiriman/[id]`
 33. **Riwayat Transit di `/resi/[nomor]` urutannya tampak salah/tidak berurutan** → cek jam server saat insert (`created_at` masing-masing baris) — timeline digabung & diurutkan murni berdasarkan `created_at`, TIDAK ada validasi urutan tiba/berangkat di level input (spec 09 §3 sengaja longgar, KT #3), jadi staf yang input belakangan/salah urutan akan tampil apa adanya sesuai waktu insert sebenarnya, bukan urutan logis yang "dikoreksi" sistem
+34. ~~Staf role `cs` konfirmasi booking mandiri dengan status_bayar dp/lunas, tapi "Riwayat Pembayaran" di detail pengiriman kosong~~ → **FIXED 20 Jul 2026** (`supabase/migrations/20260720300000_fix_cs_pengiriman_pembayaran.sql`) — `cs` sekarang masuk RLS INSERT `pengiriman_pembayaran`. Lihat §RLS untuk detail fix & cara verifikasinya. Kalau masih kejadian setelah migration ini di-apply, cek migration benar-benar jalan (`SELECT policyname, with_check FROM pg_policies WHERE tablename='pengiriman_pembayaran' AND policyname='insert_pengiriman_pembayaran'` harus menunjukkan `cs` di array)
+35. **`/booking/*` selalu redirect ke `/booking/login` walau `BOOKING_JWT_SECRET` sudah diisi** → cek endpoint `/api/booking-auth/me` langsung (harus `{authenticated:true,...}` setelah login) — kalau selalu `false`, kemungkinan `BOOKING_JWT_SECRET` beda antara saat token di-sign (`signBookingSession()`) dan saat diverifikasi (`verifyBookingSession()`), mis. env var berubah setelah customer login (invalidate semua sesi booking aktif, ini efek samping yang diterima — bukan bug)
+36. **Registrasi/login booking mandiri kena "Terlalu banyak percobaan" padahal baru sekali coba** → `lib/bookingRateLimit.ts` pakai backstop GLOBAL topology-independent (bukan cuma per-IP/per-email) yang bisa terpicu penyerang lain dari IP manapun (lihat §Auth & Role "Auth Customer" poin 3) — cek log/waktu, tunggu window reset (register 5 menit, login 5 menit), atau restart server (state in-memory, hilang tiap restart)
+37. **`supabase-js` `.delete()`/`.update()` tidak mengembalikan error walau RLS memblokir & 0 baris benar-benar berubah** → RLS `USING` clause pada DELETE/UPDATE cuma memfilter baris mana yang "terlihat" untuk operasi itu; kalau baris target tidak lolos filter, Postgres/PostgREST tetap balas sukses dengan 0 baris terpengaruh, BUKAN error (beda dari INSERT yang gagal `WITH CHECK` — itu genuinely error). Ketemu saat verifikasi fix `cs`/`pengiriman_pembayaran` (20 Jul 2026): tes awal salah simpul karena cuma cek `error` tanpa cek row count, sempat kelihatan seperti DELETE "berhasil" padahal tertolak RLS. Kalau perlu memastikan sebuah DELETE/UPDATE benar-benar mengenai baris (bukan cuma "tidak error"), pakai `{ count: 'exact' }` dan cek `count`, atau `.select()` lalu cek panjang array hasil — jangan cuma percaya `!error`
 
 ---
 
@@ -1906,10 +2223,82 @@ Daftar user, tambah via `/api/create-user` dengan `SUPABASE_SERVICE_ROLE_KEY`.
 
 ### Prioritas Rendah
 
-- [ ] **Integrasi WhatsApp notifikasi**
+- [ ] **Integrasi WhatsApp notifikasi** — termasuk notifikasi status
+      booking mandiri (dikonfirmasi/ditolak), sengaja ditunda saat
+      Booking Mandiri (spec 10) dikerjakan karena butuh provider WA
+      Business API pihak ketiga berbayar yang belum dipilih
 - [ ] **Mobile app (PWA)**
 
 ### Sudah Selesai
+
+- [x] **Pembersihan Furniture** (20 Jul 2026, Fase 16, `expedisi.md` §7
+      poin 16) — langkah terakhir pivot BungaNaik → ExpedisiBunganaik.
+      pg_dump backup dulu (`docs/backup/furniture-pembersihan-20260720.sql`,
+      diverifikasi baris-per-baris cocok data asli) sebelum DROP 14 tabel
+      furniture yang dikonfirmasi genuinely tidak dipakai lagi (zero
+      referensi kode, zero inbound FK dari tabel yang dipertahankan):
+      `bahan_baku` + 6 tabel HPP produksi lainnya, `chat_ai_messages`/
+      `chat_ai_sessions`, `pelanggan_crm`, `pengumuman`, `po_progress`,
+      `target_penjualan`, `pengiriman_foto` (0 baris, nama mirip
+      `pengiriman` tapi sebenarnya sisa furniture, FK ke `penjualan`).
+      Halaman & API terkait juga dihapus: `/dashboard/{produk,gudang,
+      reseller,pengumuman,pelanggan,po,target,pencocokan,stock-aging,
+      hpp/*}`, `/dashboard/laporan/{produk,tukang,reseller}` +
+      `/dashboard/laporan/page.tsx` (Laporan Penjualan), `/dashboard/
+      owner/asisten`, `/katalog`, `/toko`, `/etalase`, `/produk`,
+      `/landing`, `/r/[token]`, `/api/{chat,reseller-portal,resi-review,
+      verify-kode}`, `components/{ChatWidget,CatalogToolbar}.tsx`, plus
+      pembersihan `components/Sidebar.tsx` (array `resellerItems`/
+      `kontrolItems`/`hppItems` dihapus total, bukan cuma di-comment) dan
+      2 export furniture-only di `lib/utils.ts`.
+      **11 tabel + 2 halaman SENGAJA DIPERTAHANKAN** (bukan kelalaian):
+      `/dashboard/penjualan` & `/dashboard/pos` bukan viewer read-only —
+      keduanya masih fitur create/edit penuh (termasuk "buat dari PO",
+      foto produk, restore stok saat hapus), jadi `produk`/`produk_foto`/
+      `resellers`/`purchase_orders`/`purchase_order_items`/`mutasi_stok`/
+      `penjualan`/`penjualan_item`/`penjualan_pembayaran`/
+      `reseller_reviews`/`tracking_progress` semua tetap ada — dipakai
+      juga oleh "Kritik & Saran", "Laporan Wilayah", sebagian "Meja Kerja
+      Owner" (3 halaman ini TIDAK diubah kodenya sama sekali, nol
+      regresi). `lib/types.ts` juga TIDAK ada perubahan (kelima interface
+      furniture masih dipakai halaman yang dipertahankan). Storage bucket
+      `BungaNaik` **sengaja tidak disentuh** (bercampur furniture &
+      expedisi, risiko salah hapus lebih besar dari manfaatnya, di luar
+      scope). Diverifikasi: `tsc --noEmit` bersih, grep nol sisa referensi
+      ke 14 tabel yang di-DROP, smoke-test semua halaman aktif (termasuk
+      yang dipertahankan) render normal.
+- [x] **Booking Mandiri — Self-Service Customer** (20 Jul 2026, Fase 15
+      bagian 1 — notifikasi WA di roadmap terpisah di atas) — customer
+      punya akun sendiri (login/register), TERPISAH TOTAL dari Supabase
+      Auth (aturan arsitektur mutlak, lihat §Auth & Role "Auth Customer").
+      Kolom `customer.email`/`password_hash` (bukan tabel baru) + tabel
+      baru `booking_request` (draft order, wajib dikonfirmasi staf sebelum
+      jadi `pengiriman` sungguhan — bukan milestone baru). API baru
+      `app/api/booking-auth/*` (register/login/logout/me/profil) dan
+      `app/api/booking/*` (submit/riwayat), semua service role + JWT
+      `booking_session` (`jose`) — identitas customer HANYA dari JWT,
+      tidak pernah dari body request. Rate limit per-IP/per-email PLUS
+      backstop global topology-independent (ditambah setelah dikonfirmasi
+      deployment tidak ada reverse proxy — `X-Forwarded-For` bisa
+      dipalsu). Honeypot register, bcrypt cost 12, pesan error login
+      generik. `lib/tarifAksi.ts` (`lookupTarifOngkir()`) diekstrak dari
+      form staf `/dashboard/pengiriman` (regresi check: 0 perubahan
+      perilaku), dipakai ulang di form booking customer DAN modal
+      konfirmasi staf. Halaman baru `/booking/*` (customer, TANPA
+      Sidebar, auth client-side saja — `middleware.ts` tidak
+      memproteksinya) dan `/dashboard/booking` (staf, role
+      superadmin/cs/kasir/keuangan, konfirmasi reuse
+      `insertPengirimanWithResi()` yang sudah ada). 2 aksi `aktivitas_log`
+      baru: `konfirmasi_booking`/`tolak_booking`. **Gap ditemukan saat
+      verifikasi, sudah di-fix di sesi yang sama** (bukan bug baru): role
+      `cs` bisa konfirmasi booking tapi awalnya tidak masuk RLS INSERT
+      `pengiriman_pembayaran` — insert riwayat pembayaran ditolak senyap
+      untuk booking dgn pembayaran awal. Fix: `cs` ditambah ke policy
+      INSERT (migration `20260720300000_fix_cs_pengiriman_pembayaran.sql`,
+      DELETE/rollback sengaja tidak diikutkan), diverifikasi ulang lewat
+      sesi RLS sungguhan (lihat §Known Issues #34, §RLS). Spec:
+      `docs/spec/10-booking-mandiri.md` (diarsipkan ke
+      `docs/spec/archive/`)
 
 - [x] **Pivot Expedisi Fase 1** (17 Jul 2026) — entitas `pengiriman` baru
       (terpisah dari `penjualan`), halaman `/dashboard/pengiriman` +
@@ -2260,3 +2649,8 @@ FROM manifest m JOIN manifest_biaya b ON b.manifest_id = m.id;
 33. **Jangan ubah FK `pengiriman_transit.pengiriman_id` jadi `ON DELETE NO ACTION`** — sengaja `CASCADE` (beda dari `manifest_biaya`/`klaim` yang `NO ACTION`), karena ini log operasional yang melekat ke siklus hidup kiriman, bukan catatan finansial independen
 34. **Jangan gabung `pengiriman_riwayat_publik` dan `pengiriman_transit_publik` lewat `UNION` di database** — timeline publik `/resi/[nomor]` WAJIB digabung di level aplikasi (dua query + `.sort()` JS). `UNION` di DB mengunci bentuk kolom kedua view jadi harus identik selamanya dan menaikkan risiko regresi ke view lama tiap kali salah satunya berubah
 35. **Jangan expose `cabang.nama`/`cabang.alamat`/`pengiriman_transit.catatan`/`manifest_id`/`created_by` di `pengiriman_transit_publik`** — view itu HANYA boleh punya `hub_kota` sebagai info lokasi. Nama cabang internal & alamat tidak pernah untuk konsumsi publik
+36. **Jangan buat akun customer booking mandiri lewat Supabase Auth (`auth.users`) dalam bentuk apa pun** — aturan arsitektur mutlak spec 10 (lihat §Auth & Role "Auth Customer — Booking Mandiri"). Hampir semua RLS tabel dashboard mengasumsikan "punya sesi Supabase Auth = staf terpercaya"; kalau customer login lewat mekanisme itu juga, mereka otomatis lolos semua policy longgar `auth.uid() IS NOT NULL` di tabel yang belum di-harden dan bisa baca data staf/customer lain
+37. **Jangan percaya `customer_id` (atau field identitas apa pun) dari body/query di endpoint `app/api/booking/*`/`app/api/booking-auth/*` manapun** — SELALU ambil dari `getBookingCustomerId(req)` (`lib/bookingAuth.ts`, JWT cookie `booking_session` terverifikasi). RLS tidak melindungi jalur ini sama sekali (tabel `booking_request`/`customer` diakses via service role) — endpoint itu sendiri adalah satu-satunya benteng
+38. **Jangan `select("*")` atau kembalikan kolom `pengiriman`/`booking_request` mentah ke customer di endpoint booking manapun** — selalu allowlist eksplisit, sama larangannya dengan view `pengiriman_publik` (lihat §Database Schema `booking_request`, §Business Logic "Booking Mandiri")
+39. **Jangan tambah endpoint baru di `app/api/booking/*`/`app/api/booking-auth/*` tanpa menerapkan ulang aturan §Auth & Role "Auth Customer" poin 1-5** (identitas dari JWT saja, allowlist kolom, rate limit + honeypot utk endpoint publik, bcrypt cost >= 10 + pesan error generik, validasi batas input di server) — endpoint publik yang menulis ke DB tanpa ini adalah pintu spam/brute-force/resource-exhaustion
+40. **Jangan buat `booking_request` langsung jadi `pengiriman` tanpa lewat konfirmasi staf di `/dashboard/booking`** — draft WAJIB direview (cegah spam/data kotor jadi order resmi). Jangan juga tambah milestone baru (mis. `menunggu_konfirmasi`) ke `pengiriman.milestone` untuk merepresentasikan status ini — `booking_request` sengaja tabel terpisah, pola sama kenapa `pengiriman_transit` dipisah dari milestone (spec 09)

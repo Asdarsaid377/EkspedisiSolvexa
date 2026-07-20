@@ -13,6 +13,7 @@ import {
 } from "@/lib/utils";
 import { printPengirimanInvoice } from "@/lib/printPengirimanInvoice";
 import { logAktivitas } from "@/lib/aktivitas";
+import { lookupTarifOngkir } from "@/lib/tarifAksi";
 import Link from "next/link";
 import {
 	Plus,
@@ -160,35 +161,25 @@ export default function PengirimanPage() {
 		let cancelled = false;
 		const lookup = async () => {
 			setTarifLoading(true);
-			const { data } = await supabase
-				.from("tarif_zona")
-				.select("harga_per_kg, harga_flat_min, estimasi_hari")
-				.ilike("kota_asal", asal)
-				.ilike("kota_tujuan", tujuan)
-				.eq("jenis_layanan", form.jenis_layanan)
-				.eq("aktif", true)
-				.maybeSingle();
+			const result = await lookupTarifOngkir(supabase, {
+				jenisLayanan: form.jenis_layanan,
+				kotaAsal: asal,
+				kotaTujuan: tujuan,
+				beratKg: form.berat_kg,
+				panjangCm: form.panjang_cm,
+				lebarCm: form.lebar_cm,
+				tinggiCm: form.tinggi_cm,
+			});
 			if (cancelled) return;
 			setTarifLoading(false);
 
-			if (!data) {
+			if (!result.found) {
 				setTarifInfo({ found: false });
 				return;
 			}
 
-			const beratAktual = Number(form.berat_kg) || 0;
-			const beratVolumetrik =
-				form.panjang_cm && form.lebar_cm && form.tinggi_cm
-					? (Number(form.panjang_cm) * Number(form.lebar_cm) * Number(form.tinggi_cm)) /
-						6000
-					: 0;
-			const beratEfektif = Math.max(beratAktual, beratVolumetrik);
-			const ongkirOtomatis = Math.round(
-				Math.max(data.harga_per_kg * beratEfektif, data.harga_flat_min),
-			);
-
-			setForm((f) => ({ ...f, ongkir: String(ongkirOtomatis) }));
-			setTarifInfo({ found: true, estimasi_hari: data.estimasi_hari });
+			setForm((f) => ({ ...f, ongkir: String(result.ongkir) }));
+			setTarifInfo({ found: true, estimasi_hari: result.estimasi_hari });
 		};
 		lookup();
 		return () => {
